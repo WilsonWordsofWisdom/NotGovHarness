@@ -93,7 +93,8 @@ registries. The **Evals runner** (DeepEval/Ragas/Promptfoo) stays in the Lifecyc
 *consumes* the registry. **Why:** suites like "tool-use safety" or "RAG faithfulness" are
 authored once and referenced by many agents; a shared catalog prevents per-agent duplication.
 Storage: Postgres (suite metadata/versions) + MinIO (datasets/golden sets). Platform is now
-**13 harnesses**.
+**12 harnesses** (original 12 − merged MCP gateway/registry = 11, + Eval Registry = 12; an
+earlier note miscounted this as 13).
 
 **D-012 — Evals are produced by capability-baseline + drafted, human-reviewed cases.**
 At build, the Builder maps the Agent Card's declared capabilities (`AgentSkill`s, tools, RAG
@@ -112,3 +113,49 @@ Pipeline), and **online** (sampling live production traces from Observability).
 **New connector edges:** Builder → Eval Registry (compose baseline config) · Builder → Evals
 (optional draft) · Deployment Pipeline → Evals (gate before promote) · Evals → Eval Registry
 (fetch suites) · Evals → Observability (pull traces) · Evals → LLM Gateway (judge metrics).
+
+---
+
+## 2026-08-21 — Industry gap-analysis refinements (→ 16 harnesses)
+
+Compared our architecture against the 2026 reference-architecture consensus (six horizontal
+layers + two vertical rails: Observability&Eval, Governance&Security; core capabilities Agent
+Identity / Agent Gateway / Agent Registry; the "7 patterns"). We are ahead on identity, evals,
+and platform discipline; the gaps below were real must-haves. Adopting all four additions +
+elevating ContextForge takes us from 12 to **16 harnesses**.
+
+**D-013 — Add a Knowledge / RAG harness (grounding layer).** Memory (Mem0) is not RAG. Add a
+governed, provenance-aware **agentic retrieval** service — hybrid search (BM25 + dense) +
+cross-encoder reranker + re-ask, permission-aware ingestion. Framework: **LlamaIndex** (or
+Haystack). Layer ③ Runtime. Storage: pgvector/Qdrant (vectors) + MinIO (source docs). **Why:**
+the literature's named grounding layer; closes the loop with Evals' groundedness metrics.
+
+**D-014 — Add a Sandbox / execution harness.** Isolated compute for agent-generated code/tool
+execution. Framework: **E2B** (OSS, self-hostable, network-isolated by default, CrewAI
+integration). Layer ③ Runtime. Storage: Postgres (job metadata); execution in ephemeral
+microVMs. **Why:** a core reference layer; contains runaway/unsafe agent code.
+
+**D-015 — Add a Human-in-the-Loop / Approvals harness.** approve / edit / reject gates on risky
+actions and deploys. Mechanism: **Temporal signals** (already in stack) as primary; HumanLayer
+optional. Layer ③ Runtime. Storage: Postgres (pending approvals). **Why:** named must-have
+pattern; ties cleanly to our Temporal-based Deployment Pipeline.
+
+**D-016 — Add an Audit plane.** A tamper-evident, compliance-grade audit trail consuming the
+Kafka event stream (hash-chained, append-only). Layer ① Foundation, cross-cutting like
+Observability. Storage: Postgres (hash-chained) + optional MinIO WORM. **Why:** one of the 7
+patterns; observability alone isn't a compliance record.
+
+**D-017 — Elevate ContextForge to the Agent Gateway role.** ContextForge already federates
+A2A + MCP + REST/gRPC, so it becomes the single **agent-level control point** (agent↔agent and
+agent↔tool traffic, policy, cost, audit), not just an MCP gateway. Harness renamed **Agent
+Gateway** (still includes the MCP registry). **CrewAI stays** the orchestration framework;
+LangGraph noted as a future option for stateful/HITL-heavy agents but not adopted now.
+
+**New connector edges:** Agent Runtime → Knowledge/RAG (REST, retrieve) · Agent Runtime →
+Sandbox (execute code) · Agent Runtime → Approvals (request/await decision; Temporal signal) ·
+Knowledge/RAG → LLM Gateway (embeddings) + object store · all services → Audit (Kafka) ·
+Agent Runtime → Agent Gateway → MCP servers / other agents (A2A).
+
+**Final layer map (16):** ④ Lifecycle: Builder, Deployment, Evals. ③ Runtime: Agent Gateway,
+Guardrails, Memory, Knowledge/RAG, Sandbox, Approvals. ② Catalog: Agent/Skill/Eval Registries.
+① Foundation: Identity, LLM Gateway, Observability, Audit.
