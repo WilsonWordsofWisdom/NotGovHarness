@@ -66,6 +66,53 @@ graph TB
 
 Compose uses **profiles** so only the engines a given active service needs are started.
 
+## Interconnect — connectors & surfaces
+
+How the harnesses speak to one another. Full visual reference (control + data plane,
+surfaces table, cross-cutting planes): the "Connectors & Surfaces" artifact.
+
+**Connectors (protocols on the wire):** `REST/OpenAPI` (default, generated clients) ·
+`OpenAI API` (→ LLM Gateway) · `MCP` (→ MCP Gateway → servers) · `A2A` (agent↔agent, signed
+Agent Cards) · `SPIFFE Workload API` + `OAuth2` (Identity) · `OTLP` (→ Observability) ·
+`Kafka` (async events) · `S3` (bundles/artifacts).
+
+**Data plane — one request through a running agent:**
+
+```mermaid
+sequenceDiagram
+    participant C as Caller
+    participant ID as Identity
+    participant RT as Agent Runtime
+    participant GR as Guardrails
+    participant MEM as Memory
+    participant GW as LLM Gateway
+    participant MG as MCP Gateway
+    C->>ID: get scoped token (OAuth2)
+    C->>RT: invoke task (A2A, mTLS/SVID)
+    RT->>GR: check(input) (REST)
+    RT->>MEM: retrieve context (REST)
+    loop reason / act
+        RT->>GW: chat/completion (OpenAI API)
+        RT->>MG: call tool (MCP) -> MCP servers
+    end
+    RT->>GR: check(output) (REST)
+    RT->>MEM: persist (REST)
+    RT->>C: result (A2A)
+    Note over C,MG: every hop: mTLS (SPIFFE) + scoped token (OAuth2); all spans -> OTLP -> Observability
+```
+
+**Control plane — build & deploy:**
+
+```mermaid
+flowchart LR
+    REG["Registries<br/>Agent · Skill · MCP"] -->|read, REST| AB["Agent Builder<br/>CrewAI"]
+    AB -->|publish signed Agent Card, REST| REG
+    AB --> DP["Deployment Pipeline<br/>Temporal + Docker"]
+    DP -->|read card, REST| REG
+    DP -->|deploy events, Kafka| EVT[(Redpanda)]
+    DP --> RT["Agent Runtime<br/>live A2A endpoint"]
+```
+
 ## Phase 0 substrate
 
 The substrate is the only thing built in the first cycle. Every harness plugs into it. Two
