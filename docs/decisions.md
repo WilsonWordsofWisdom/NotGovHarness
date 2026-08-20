@@ -59,7 +59,8 @@ events, tracing" (a *façade service*), which lowers total effort.
 | MCP Gateway **+** Registry (merged) | **IBM ContextForge** (Python/FastAPI) | Apache-2.0 | Integrate | Postgres |
 | Observability | **Langfuse** + OTel GenAI semconv + OpenInference/OpenLLMetry | MIT | Integrate | ClickHouse + Redis + MinIO |
 | Guardrails | Layered: **LLM Guard → NeMo Guardrails → Guardrails AI → Llama Guard** | Apache-2.0 / OSS | Integrate libs | Postgres |
-| Evals | **DeepEval** + Promptfoo (red-team) + Ragas (RAG) | Apache-2.0 / OSS | Integrate libs | Postgres |
+| Evals (runner) | **DeepEval** + Promptfoo (red-team) + Ragas (RAG) | Apache-2.0 / OSS | Integrate libs | Postgres |
+| Eval Registry | Build (suite catalog) — see D-011 | Open | Build | Postgres + MinIO |
 | Memory | **Mem0** (default); Zep/Graphiti = temporal-KG alt | Apache-2.0 | Integrate | Vector (pgvector/Qdrant) |
 
 **D-008 — MCP Gateway and Registry are merged onto ContextForge.**
@@ -80,3 +81,34 @@ identities calling other agents/tools; SPIFFE is the 2026 de-facto workload-iden
 **Engine-map consequence:** "Postgres everywhere" does not hold. Langfuse brings
 ClickHouse + Redis + MinIO; Skill Registry needs object storage; Memory needs a vector store;
 Temporal and SPIRE bring their own stores. This validates D-004 (per-service best-fit engines).
+
+---
+
+## 2026-08-21 — Evals design
+
+**D-011 — Eval Registry is a separate (13th) harness in the Catalog layer.**
+Eval **suites** (`{ dataset, metrics, thresholds }`) are first-class, versioned, reusable
+artifacts cataloged by a dedicated **Eval Registry**, parallel to the Agent/Skill/MCP
+registries. The **Evals runner** (DeepEval/Ragas/Promptfoo) stays in the Lifecycle layer and
+*consumes* the registry. **Why:** suites like "tool-use safety" or "RAG faithfulness" are
+authored once and referenced by many agents; a shared catalog prevents per-agent duplication.
+Storage: Postgres (suite metadata/versions) + MinIO (datasets/golden sets). Platform is now
+**13 harnesses**.
+
+**D-012 — Evals are produced by capability-baseline + drafted, human-reviewed cases.**
+At build, the Builder maps the Agent Card's declared capabilities (`AgentSkill`s, tools, RAG
+usage) to a **baseline metric pack** pulled from the Eval Registry (uses tools → Tool
+Correctness; RAG → Ragas faithfulness; always → a safety/red-team pack). An LLM additionally
+**drafts** scenario cases from the use-case description; a human **reviews** them before they
+gate. Not blind full auto-generation. **Why:** an unreviewed auto-generated suite can't be
+trusted as a deploy gate ("who evaluates the evaluator").
+
+**Runner behavior:** drives the target agent through the normal data-plane path (A2A invoke),
+captures output **and the distributed trace from Observability** (to score *how* it worked, not
+just the answer), scores via the engines (LLM-judge metrics call the LLM Gateway), persists
+results to Postgres. Runs offline, as a **deploy gate** (Temporal step in the Deployment
+Pipeline), and **online** (sampling live production traces from Observability).
+
+**New connector edges:** Builder → Eval Registry (compose baseline config) · Builder → Evals
+(optional draft) · Deployment Pipeline → Evals (gate before promote) · Evals → Eval Registry
+(fetch suites) · Evals → Observability (pull traces) · Evals → LLM Gateway (judge metrics).

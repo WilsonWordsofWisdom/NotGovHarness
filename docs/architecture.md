@@ -22,6 +22,7 @@ graph TB
     subgraph L2["② Catalog & Registries"]
         AR["Agent Registry<br/><i>A2A Agent Cards (signed)</i>"]
         SR["Skill Registry<br/><i>Agent Skills (SKILL.md)</i>"]
+        ER["Eval Registry<br/><i>eval suites (versioned)</i>"]
     end
     subgraph L1["① Foundation & Cross-cutting"]
         ID["Agent Identity<br/><i>SPIFFE/SPIRE + OAuth2</i>"]
@@ -29,10 +30,11 @@ graph TB
         OBS["Observability<br/><i>Langfuse + OTel</i>"]
     end
 
-    AB --> AR & SR & MG
+    AB --> AR & SR & MG & ER
     AB --> GW & MEM & GR
     DP --> AR
-    EV --> GW & OBS
+    DP -->|gate| EV
+    EV --> GW & OBS & ER
     L3 --> ID
     L2 --> ID
     L4 --> OBS
@@ -59,7 +61,7 @@ graph TB
 |---|---|---|
 | Postgres | LiteLLM, Builder, Deploy (Temporal), Agent Registry, Identity authz, Guardrails, Evals, ContextForge | Phase 0 (shared container, db-per-service) |
 | ClickHouse + Redis + MinIO | Observability (Langfuse) | when Observability is built |
-| MinIO (object store) | Skill Registry bundles (shared object store) | when Skill Registry is built |
+| MinIO (object store) | Skill Registry bundles, Eval Registry datasets (shared object store) | when owning harness is built |
 | Vector (pgvector / Qdrant) | Memory | when Memory is built |
 | Temporal datastore | Deployment Pipeline orchestration | when Deployment is built |
 | SPIRE datastore | Agent Identity | when Identity is built |
