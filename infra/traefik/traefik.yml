@@ -1,0 +1,15 @@
+# Traefik static config. Services opt in via Docker labels (exposedByDefault: false).
+entryPoints:
+  web:
+    address: ":80"
+
+api:
+  dashboard: true
+  insecure: true # dev only — dashboard on :8080 without auth
+
+providers:
+  docker:
+    exposedByDefault: false
+
+log:
+  level: INFO

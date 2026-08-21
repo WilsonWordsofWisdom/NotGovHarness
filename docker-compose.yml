@@ -1,0 +1,75 @@
+# NotGovHarness local platform stack.
+# Phase 0 `core` profile: edge + Postgres + event backbone + tracing baseline.
+# NOTE: authored but not yet verified against a running Docker daemon.
+# Later harnesses enable additional profiles (identity, clickhouse, objectstore, vector, temporal).
+# Project name comes from the directory (or set COMPOSE_PROJECT_NAME) for broad Compose compat.
+
+services:
+  traefik:
+    image: traefik:v3.1
+    profiles: ["core"]
+    ports:
+      - "80:80" # edge — services at http://localhost/<service>/...
+      - "8080:8080" # dashboard (insecure, dev only)
+    volumes:
+      - ./infra/traefik/traefik.yml:/etc/traefik/traefik.yml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+
+  postgres:
+    image: postgres:16
+    profiles: ["core"]
+    environment:
+      POSTGRES_USER: platform
+      POSTGRES_PASSWORD: platform
+      POSTGRES_DB: platform
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./infra/db/init:/docker-entrypoint-initdb.d:ro
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U platform"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redpanda:
+    image: redpandadata/redpanda:v24.2.7
+    profiles: ["core"]
+    command:
+      - redpanda
+      - start
+      - --smp=1
+      - --overprovisioned
+      - --node-id=0
+      - --kafka-addr=PLAINTEXT://0.0.0.0:9092
+      - --advertise-kafka-addr=PLAINTEXT://localhost:9092
+    ports:
+      - "9092:9092" # Kafka API
+      - "9644:9644" # admin
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.109.0
+    profiles: ["core"]
+    command: ["--config=/etc/otel-collector.yaml"]
+    volumes:
+      - ./infra/otel-collector.yaml:/etc/otel-collector.yaml:ro
+    ports:
+      - "4317:4317" # OTLP gRPC (services export here)
+      - "4318:4318" # OTLP HTTP
+    depends_on:
+      - jaeger
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.60
+    profiles: ["core"]
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    ports:
+      - "16686:16686" # Jaeger UI
+
+# Application services (example-service, upstream-stub) are added in the next build step,
+# each with Traefik labels and a `core` profile entry.
+
+volumes:
+  pgdata:
