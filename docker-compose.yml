@@ -18,6 +18,11 @@ services:
   postgres:
     image: postgres:16
     profiles: ["core"]
+    # Old Docker Engine (20.10.x) ships a seccomp profile that blocks syscalls (clone3, ...)
+    # these modern images need. Relaxing seccomp is a local-dev workaround; the real fix is a
+    # newer Docker Engine. Remove once on a current Docker Desktop.
+    security_opt:
+      - seccomp:unconfined
     environment:
       POSTGRES_USER: platform
       POSTGRES_PASSWORD: platform
@@ -36,6 +41,8 @@ services:
   redpanda:
     image: redpandadata/redpanda:v24.2.7
     profiles: ["core"]
+    security_opt:
+      - seccomp:unconfined
     command:
       - redpanda
       - start
