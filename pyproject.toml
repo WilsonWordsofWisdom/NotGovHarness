@@ -27,6 +27,8 @@ dev = [
 line-length = 100
 target-version = "py312"
 src = ["packages/platform-core/src", "packages/platform-testing/src"]
+# Generated API clients are not hand-maintained; don't lint them.
+extend-exclude = ["clients"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "ASYNC"]
@@ -36,7 +38,8 @@ ignore = ["B008"]
 [tool.pyright]
 pythonVersion = "3.12"
 typeCheckingMode = "basic"
-include = ["packages"]
+include = ["packages", "services", "tools"]
+exclude = ["clients", "**/.venv", "**/migrations"]
 venvPath = "."
 venv = ".venv"
 

@@ -52,9 +52,9 @@ tasks:
       - "{{.COMPOSE}} logs -f"
 
   codegen:
-    desc: Export each service's OpenAPI and regenerate typed clients (Phase 0 step 6)
+    desc: Export each service's OpenAPI and regenerate typed clients
     cmds:
-      - echo "codegen not yet implemented — added with tools/codegen"
+      - uv run python tools/codegen/generate.py
 
   new-service:
     desc: "Scaffold a new service from the template (usage: task new-service NAME=foo SHAPE=greenfield)"
