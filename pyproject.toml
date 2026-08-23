@@ -1,0 +1,45 @@
+[project]
+name = "notgovharness"
+version = "0.0.0"
+description = "Locally-runnable reference implementation of a complete agentic platform."
+requires-python = ">=3.12"
+dependencies = []
+
+[tool.uv]
+package = false
+
+[tool.uv.workspace]
+members = ["packages/*"]
+# services/* and clients/* join the workspace as they are created.
+
+[dependency-groups]
+dev = [
+    "ruff>=0.6",
+    "pyright>=1.1.380",
+    "pytest>=8",
+    "pytest-asyncio>=0.24",
+    "pytest-cov>=5",
+    "copier>=9",
+    "openapi-python-client>=0.21",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["packages/platform-core/src", "packages/platform-testing/src"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "ASYNC"]
+# B008: FastAPI uses callables (Depends/Query/...) in argument defaults by design.
+ignore = ["B008"]
+
+[tool.pyright]
+pythonVersion = "3.12"
+typeCheckingMode = "basic"
+include = ["packages"]
+venvPath = "."
+venv = ".venv"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["packages", "services"]

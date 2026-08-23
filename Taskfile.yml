@@ -1,0 +1,67 @@
+version: "3"
+
+# NotGovHarness dev workflow. Requires: uv, docker (for `up`/`down`).
+# Ensure ~/.local/bin is on PATH (uv, task).
+
+vars:
+  COMPOSE: docker compose
+
+tasks:
+  default:
+    desc: List available tasks
+    cmds:
+      - task --list
+    silent: true
+
+  sync:
+    desc: Resolve and install the workspace (uv)
+    cmds:
+      - uv sync --all-packages
+
+  lint:
+    desc: Lint + format-check + type-check the workspace
+    cmds:
+      - uv run ruff check .
+      - uv run ruff format --check .
+      - uv run pyright
+
+  fmt:
+    desc: Auto-format the workspace
+    cmds:
+      - uv run ruff format .
+      - uv run ruff check --fix .
+
+  test:
+    desc: Run unit + integration tests (integration uses testcontainers)
+    cmds:
+      - uv run pytest
+
+  up:
+    desc: Start the local platform stack (core profile)
+    cmds:
+      - "{{.COMPOSE}} --profile core up -d"
+
+  down:
+    desc: Stop the local platform stack
+    cmds:
+      - "{{.COMPOSE}} --profile core down"
+
+  logs:
+    desc: Tail stack logs
+    cmds:
+      - "{{.COMPOSE}} logs -f"
+
+  codegen:
+    desc: Export each service's OpenAPI and regenerate typed clients (Phase 0 step 6)
+    cmds:
+      - echo "codegen not yet implemented — added with tools/codegen"
+
+  new-service:
+    desc: "Scaffold a new service from the template (usage: task new-service NAME=foo SHAPE=greenfield)"
+    cmds:
+      - echo "new-service not yet implemented — added with templates/service"
+
+  migrate:
+    desc: "Run a service's Alembic migrations (usage: task migrate SVC=example-service)"
+    cmds:
+      - echo "migrate not yet implemented — added with the first service's migrations"
