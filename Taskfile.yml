@@ -57,9 +57,10 @@ tasks:
       - uv run python tools/codegen/generate.py
 
   new-service:
-    desc: "Scaffold a new service from the template (usage: task new-service NAME=foo SHAPE=greenfield)"
+    desc: "Scaffold a new service (usage: task new-service NAME=billing-service)"
     cmds:
-      - echo "new-service not yet implemented — added with templates/service"
+      - uv run copier copy --defaults --data service_name={{.NAME}} templates/service services/{{.NAME}}
+      - uv sync --all-packages
 
   migrate:
     desc: "Run a service's Alembic migrations (usage: task migrate SVC=example-service)"
