@@ -93,10 +93,12 @@ services:
       DATABASE_URL: postgresql+asyncpg://platform:platform@postgres:5432/example_service
       KAFKA_BROKERS: redpanda:29092
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+      UPSTREAM_URL: http://upstream-stub:8000
     depends_on:
       - postgres
       - redpanda
       - otel-collector
+      - upstream-stub
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.example.rule=PathPrefix(`/example`)"
@@ -104,6 +106,20 @@ services:
       - "traefik.http.routers.example.middlewares=example-stripprefix"
       - "traefik.http.middlewares.example-stripprefix.stripprefix.prefixes=/example"
       - "traefik.http.services.example.loadbalancer.server.port=8000"
+
+  upstream-stub:
+    profiles: ["core"]
+    security_opt:
+      - seccomp:unconfined
+    build:
+      context: .
+      dockerfile: services/upstream-stub/Dockerfile
+    environment:
+      SERVICE_NAME: upstream-stub
+      ENV: dev
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+    depends_on:
+      - otel-collector
 
 volumes:
   pgdata:
