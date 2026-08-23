@@ -159,3 +159,30 @@ Agent Runtime → Agent Gateway → MCP servers / other agents (A2A).
 **Final layer map (16):** ④ Lifecycle: Builder, Deployment, Evals. ③ Runtime: Agent Gateway,
 Guardrails, Memory, Knowledge/RAG, Sandbox, Approvals. ② Catalog: Agent/Skill/Eval Registries.
 ① Foundation: Identity, LLM Gateway, Observability, Audit.
+
+---
+
+## 2026-08-23 — Agent Identity harness design (Wave 1)
+
+Full design: [superpowers/specs/2026-08-23-agent-identity-harness-design.md](superpowers/specs/2026-08-23-agent-identity-harness-design.md).
+
+**D-018 — Identity = standards base + AIP-shaped delegation claims.** Refines D-010 after research
+(CNCF 2026, IETF WIMSE, RFC 8693, AIP draft-00, the MCP/A2A governance-gap findings). Adopt the
+stable spine — **SPIFFE/SPIRE** (X.509 SVIDs) + **OAuth2 client-credentials** + **JWKS** +
+**SVID-authenticated token endpoint** — and add **RFC 8693 token exchange** for delegation
+(subject+actor → `act`-claim JWT), because plain client-credentials cannot express an agent acting
+on-behalf-of a principal. Token claims are **AIP/IBCT-shaped**: `mode` (delegated vs autonomous),
+`prov` (provenance for Audit), and `depth` with a **max-delegation-depth** enforced at verify (the
+check AIP's adversarial tests uniquely caught). **Why:** genuinely agent-grade delegation on stable,
+well-tooled standards, without betting the reference on a draft-00 wire format.
+
+**D-019 — Cutting-edge mechanisms are documented seams, not built.** Biscuit (offline attenuation /
+multi-hop), the full AIP wire format, OAuth Transaction Tokens, **OPA** (policy — inline scopes now,
+OPA-ready seam), cross-org federation, and token refresh/revocation are explicitly out of scope.
+JWT-SVIDs noted as the path for ephemeral agent workloads (we use X.509-SVIDs for long-lived
+services). **Why:** bound the harness; keep upgrade paths open.
+
+**D-020 — Build split around the Docker prerequisite.** `identity-service` (OAuth2 + token exchange
++ claim model) and the `platform-core` `oauth2`/`svid` changes build and unit-test on the current
+stack; the **SPIRE server/agent + mTLS** integration is gated on the Docker Engine upgrade. **Why:**
+SPIRE agents/attestors hit the old-Docker seccomp/thread wall (see Phase 0 learnings).
