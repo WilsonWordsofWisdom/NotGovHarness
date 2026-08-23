@@ -1,0 +1,16 @@
+_templates_suffix: .jinja
+_answers_file: .copier-answers.yml
+
+service_name:
+  type: str
+  help: Service name in kebab-case (e.g. billing-service)
+
+package_name:
+  type: str
+  help: Python package name
+  default: "{{ service_name | replace('-', '_') }}"
+
+description:
+  type: str
+  help: One-line description
+  default: A NotGovHarness service.
