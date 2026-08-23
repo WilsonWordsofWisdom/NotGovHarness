@@ -9,8 +9,8 @@ dependencies = []
 package = false
 
 [tool.uv.workspace]
-members = ["packages/*"]
-# services/* and clients/* join the workspace as they are created.
+members = ["packages/*", "services/*"]
+# clients/* joins the workspace once the first generated client exists.
 
 [dependency-groups]
 dev = [

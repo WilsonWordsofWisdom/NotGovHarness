@@ -64,4 +64,4 @@ tasks:
   migrate:
     desc: "Run a service's Alembic migrations (usage: task migrate SVC=example-service)"
     cmds:
-      - echo "migrate not yet implemented — added with the first service's migrations"
+      - uv run alembic -c services/{{.SVC}}/alembic.ini upgrade head

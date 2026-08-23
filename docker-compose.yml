@@ -49,10 +49,13 @@ services:
       - --smp=1
       - --overprovisioned
       - --node-id=0
-      - --kafka-addr=PLAINTEXT://0.0.0.0:9092
-      - --advertise-kafka-addr=PLAINTEXT://localhost:9092
+      # Two listeners: external for host tools (localhost:9092), internal for other containers
+      # (redpanda:29092) — a Kafka client is redirected to the advertised address, so containers
+      # must be told a name they can resolve.
+      - --kafka-addr=external://0.0.0.0:9092,internal://0.0.0.0:29092
+      - --advertise-kafka-addr=external://localhost:9092,internal://redpanda:29092
     ports:
-      - "9092:9092" # Kafka API
+      - "9092:9092" # Kafka API (external, host)
       - "9644:9644" # admin
 
   otel-collector:
@@ -75,8 +78,32 @@ services:
     ports:
       - "16686:16686" # Jaeger UI
 
-# Application services (example-service, upstream-stub) are added in the next build step,
-# each with Traefik labels and a `core` profile entry.
+  example-service:
+    profiles: ["core"]
+    # Same old-Docker seccomp workaround as postgres/redpanda: the 20.10.x profile blocks
+    # thread creation (OTel resource detection spawns threads → "can't start new thread").
+    security_opt:
+      - seccomp:unconfined
+    build:
+      context: .
+      dockerfile: services/example-service/Dockerfile
+    environment:
+      SERVICE_NAME: example-service
+      ENV: dev
+      DATABASE_URL: postgresql+asyncpg://platform:platform@postgres:5432/example_service
+      KAFKA_BROKERS: redpanda:29092
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+    depends_on:
+      - postgres
+      - redpanda
+      - otel-collector
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.example.rule=PathPrefix(`/example`)"
+      - "traefik.http.routers.example.entrypoints=web"
+      - "traefik.http.routers.example.middlewares=example-stripprefix"
+      - "traefik.http.middlewares.example-stripprefix.stripprefix.prefixes=/example"
+      - "traefik.http.services.example.loadbalancer.server.port=8000"
 
 volumes:
   pgdata:
