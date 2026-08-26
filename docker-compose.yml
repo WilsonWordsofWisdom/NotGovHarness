@@ -6,7 +6,7 @@
 
 services:
   traefik:
-    image: traefik:v3.1
+    image: traefik:v3.7.11
     profiles: ["core"]
     ports:
       - "80:80" # edge — services at http://localhost/<service>/...
