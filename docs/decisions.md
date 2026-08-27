@@ -186,3 +186,31 @@ services). **Why:** bound the harness; keep upgrade paths open.
 + claim model) and the `platform-core` `oauth2`/`svid` changes build and unit-test on the current
 stack; the **SPIRE server/agent + mTLS** integration is gated on the Docker Engine upgrade. **Why:**
 SPIRE agents/attestors hit the old-Docker seccomp/thread wall (see Phase 0 learnings).
+
+---
+
+## 2026-08-27 — Observability harness design (Wave 1, built ahead of Identity)
+
+Full design: [superpowers/specs/2026-08-27-observability-harness-design.md](superpowers/specs/2026-08-27-observability-harness-design.md).
+
+**D-021 — Observability is built before Identity, out of the plan's stated order.** The Wave 1
+order in `implementation-plan.md` is Identity → LLM Gateway → Observability → Audit, with Identity
+called out as build-first. Built out of order by explicit choice. **Why it's viable:** Observability
+has no hard dependency on Identity — it fans the existing Phase 0 OTel baseline (D-007) out to a
+second exporter (Langfuse), it doesn't touch `platform-core`'s auth layer. **Consequence:** traces
+won't carry `spiffe_id`/`act`-chain attributes until Identity lands; accepted as expected, not a
+gap to route around.
+
+**D-022 — Observability adds zero application code; it's an infra-only harness.** Langfuse is
+wired as a second OTLP exporter on the existing `otel-collector` pipeline
+(`otlphttp/langfuse` alongside `otlp/jaeger`), not via the `langfuse` Python SDK inside services.
+**Why:** services already export OTLP to one collector endpoint (`platform_core.otel`); duplicating
+that with manual SDK instrumentation would violate D-007's "builds on this baseline instead of
+duplicating" and add a dependency every future service would need to remember.
+
+**D-023 — ClickHouse and MinIO are their own reusable compose profiles, not bundled into
+`observability`.** `clickhouse` and `objectstore` profiles stand alone; `langfuse-web`/`worker`/
+`redis` are the `observability` profile proper, composed on top. **Why:** the compose file's own
+header comment already anticipated this split, and later waves plausibly reuse both (Wave 2
+registries want MinIO buckets; ClickHouse is a plausible fit for other analytics-shaped stores) —
+bundling them into one Langfuse-specific profile would mean re-deriving the split later.
