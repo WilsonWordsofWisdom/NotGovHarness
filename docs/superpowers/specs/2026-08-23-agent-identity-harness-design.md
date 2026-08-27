@@ -54,8 +54,9 @@ Biscuit / full AIP wire format; OAuth Transaction Tokens; OPA policy engine; cro
   registration entries + trust bundle.
 - **`spire-agent`** — node agent, **Docker workload attestor**; exposes the Workload API on a unix
   socket shared into service containers via a volume.
-- **`spire-registrar`** — an init step running `spire-server entry create` to map each service's
-  compose selector (`docker:label:com.docker.compose.service:<svc>`) → `spiffe://notgovharness/<svc>`.
+- **`spire-bootstrap`** — a one-shot init container (`docker:cli`, not the SPIRE image — see
+  below) running `spire-server token generate` + `entry create` to map each service's compose
+  selector (`docker:label:com.docker.compose.service:<svc>`) → `spiffe://notgovharness/<svc>`.
 - **`identity-service`** — greenfield FastAPI (façade-free); the OAuth2 authz server + trust anchor.
   Postgres `identity` DB.
 
@@ -114,11 +115,11 @@ Logs + one Jaeger trace carry `spiffe_id`, `sub`, and the `act` chain — audit-
 
 ## Infra (compose `identity` profile)
 
-`spire-server`, `spire-agent` (shared socket volume), `spire-registrar` (init), `identity-service`
-(+ `identity` DB on the shared Postgres). **Requires the upgraded Docker Engine** — SPIRE agents/
-attestors and the added containers are what the old 20.10.x seccomp/thread limits break. The
-`identity-service` + `platform-core` work builds and unit-tests before the upgrade; SVID/mTLS
-integration verifies after.
+`spire-server`, `spire-agent` (shared socket volume), `spire-bootstrap` (init), `identity-service`
+(+ `identity` DB on the shared Postgres). The Docker upgrade this section originally gated SPIRE
+on had already happened by the time this got built (see the Observability harness's learnings) —
+ClickHouse, MinIO, Redis, and now SPIRE all ran clean on the current engine with no seccomp
+workaround needed.
 
 ## Build order (dependency-ordered)
 
@@ -143,10 +144,31 @@ integration verifies after.
 
 ## Risks / watch-items
 
-- **SPIRE on old Docker** — the reason the SPIRE half is gated on the Docker upgrade.
 - **X.509-SVID issuance latency** — fine for long-lived services; note **JWT-SVID** as the path for
   ephemeral agent workloads.
 - **AIP is draft-00** — we adopt its *concepts* into a standard-JWT model, not its wire format, so we
   don't chase a moving spec; Biscuit is the documented upgrade for offline attenuation / multi-hop.
 - **Signing-key management** — env/secret for local dev; a real KMS is out of scope.
 - **Delegation-depth default (3)** — configurable; enforced at verify to prevent unbounded chains.
+- **join_token ignores an explicit `-spiffeID`** — confirmed against a real attest log: the
+  resulting node's SPIFFE ID is always `spiffe://notgovharness/spire/agent/join_token/<the token
+  itself>`, not whatever `-spiffeID` was passed to `token generate`. `entry create`'s `-parentID`
+  must use that exact derived ID or the agent never receives the entries — cost a full debug cycle
+  to find.
+- **join_token is single-use** — every fresh token generation therefore mints a *new* agent node
+  ID, so entries registered against a previous run become orphaned on agent restart unless
+  spire-bootstrap re-runs first (it does, on every `docker compose up`, since it's a one-shot
+  gating spire-agent via `condition: service_completed_successfully`). A `docker compose restart
+  spire-agent` alone, without re-running bootstrap, will fail to re-attest — a known, accepted
+  limitation for a local reference platform rather than building persistent node credentials.
+- **The spire-server/spire-agent images ship no shell** — only the Go binaries. `spire-bootstrap`
+  therefore runs `docker exec` into the (named, `container_name: spire-server`) server container
+  from a sibling `docker:cli` container instead of scripting inside the SPIRE image directly.
+- **Fresh named volumes are root-owned; spire-server's image defaults to UID 1000** — sqlite failed
+  to create its datastore file with a "no such file or directory" error that was actually a
+  permission error in disguise. Fixed with `user: "0:0"` on spire-server (spire-agent already
+  defaults to root, unaffected).
+- **`token generate` without `-spiffeID` prints a stray "Warning: Missing SPIFFE ID." line to
+  stdout** — corrupted a naive `sed`-only token extraction (embedded newline + trailing text).
+  Fixed by `grep '^Token:'` before the `sed`, so only the real token line is captured regardless
+  of what else the CLI prints.
