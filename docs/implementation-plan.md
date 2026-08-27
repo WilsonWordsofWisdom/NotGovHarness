@@ -13,10 +13,15 @@ An approved Phase 0 scaffold spec, a decisions log (D-001…D-017), and an archi
 libraries/dependencies, the backend infra + databases, and the build order derived from
 dependencies. Phase 0 is the concrete gate before any harness is built.
 
-## Status (updated 2026-08-23)
+## Status (updated 2026-08-27)
 
 **Phase 0 is COMPLETE and merged to `main`** (PRs #2 + #3). All six success criteria verified.
-Next: Wave 1 — see "Wave 1 readiness" below.
+
+**Wave 1 progress:** the **Observability** harness (Langfuse v4) is built and verified — see
+[superpowers/specs/2026-08-27-observability-harness-design.md](superpowers/specs/2026-08-27-observability-harness-design.md)
+and decisions D-021..D-023. Built ahead of Identity (the plan's stated build-first harness) by
+explicit choice; see that spec's Context section for why this ordering is safe. Remaining Wave 1
+harnesses: Identity (design spec written, D-018..D-020, not yet built), LLM Gateway, Audit.
 
 | Area | State |
 |---|---|
@@ -42,8 +47,15 @@ identity. `task lint` clean (ruff + pyright, 0 errors).
   (plain `uv sync` installs only the root + dev group, not the members).
 - **Docker Engine is old (20.10.x)** and its seccomp profile blocks syscalls Postgres 16 and
   Redpanda/seastar need → both get `security_opt: [seccomp:unconfined]` in compose as a local-dev
-  workaround. **⚠️ Upgrade Docker Desktop before Part B** — SPIRE, ClickHouse, Temporal, and
-  Qdrant are likely to hit the same wall, and the workaround does not scale cleanly to all of them.
+  workaround. **Update:** Docker Desktop has since been upgraded (4.88.1, Engine 29.7.2) — the
+  `seccomp:unconfined` overrides are left in place (never verified as removable) but ClickHouse,
+  MinIO, Redis, and Langfuse all came up clean on the new engine with no seccomp workaround needed.
+- **Raising Docker Desktop's memory allocation resets its VM** — every running container is lost
+  (not just stopped), including volumes' container state; the `core` stack had to be brought back
+  up from scratch after bumping memory from ~8 GiB to 31 GiB for the Observability harness.
+- **Langfuse v4 defaults to `events_only` mode** — the legacy `GET /api/public/traces` /
+  `GET /api/public/observations` (v1) endpoints 404 under it. Use the **Observations API v2**
+  (`GET /api/public/v2/observations`) instead; see the Observability harness spec's risks section.
 - **OTel + Kafka:** the community `opentelemetry-instrumentation-aiokafka` was **not** adopted;
   `events.py` instead injects/extracts W3C `traceparent` via Kafka **headers** (the plan's
   documented fallback), so a consumer span links into the producing trace. FastAPI, httpx, and

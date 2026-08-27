@@ -1,6 +1,7 @@
 # Observability Harness — Design
 
-**Status:** approved design, pre-implementation
+**Status:** built and verified — all 4 build-order steps + the 6 done-when criteria confirmed
+against a live stack (see implementation-plan.md's Status section, updated 2026-08-27).
 **Date:** 2026-08-27
 **Wave:** 1 (Foundation) · built out of the plan's stated order (Identity, then LLM Gateway,
 Observability, Audit) — see note in Context.
