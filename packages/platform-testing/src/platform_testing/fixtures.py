@@ -16,6 +16,7 @@ import os
 import socket
 from uuid import uuid4
 
+import httpx
 import pytest
 
 from platform_core.db import Database
@@ -26,6 +27,12 @@ PG_URL = os.getenv(
     "postgresql+asyncpg://platform:platform@localhost:5432/example_service",
 )
 KAFKA = os.getenv("PLATFORM_TEST_KAFKA", "localhost:9092")
+LANGFUSE_URL = os.getenv("PLATFORM_TEST_LANGFUSE_URL", "http://localhost:3000")
+# Seeded dev key pair (LANGFUSE_INIT_PROJECT_* in docker-compose.yml's langfuse-web service).
+LANGFUSE_AUTH = (
+    os.getenv("PLATFORM_TEST_LANGFUSE_PUBLIC_KEY", "pk-lf-00000000-0000-4000-8000-000000000000"),
+    os.getenv("PLATFORM_TEST_LANGFUSE_SECRET_KEY", "sk-lf-00000000-0000-4000-8000-000000000000"),
+)
 
 
 def _reachable(host: str, port: int, timeout: float = 1.0) -> bool:
@@ -95,3 +102,47 @@ class EventProbe:
 @pytest.fixture
 def event_probe(platform_kafka_brokers: str) -> EventProbe:
     return EventProbe(platform_kafka_brokers)
+
+
+class LangfuseProbe:
+    """Polls Langfuse's Observations API v2 for a span by name (ingestion is async — the
+    otel-collector batches, and langfuse-worker consumes a queue — so this retries, not one-shot).
+    """
+
+    def __init__(self, base_url: str, auth: tuple[str, str]) -> None:
+        self._base_url = base_url
+        self._auth = auth
+
+    async def wait_for_observation(
+        self,
+        name: str,
+        *,
+        timeout: float = 30.0,  # noqa: ASYNC109 - probe budget, not a cancellation deadline
+        interval: float = 2.0,
+    ) -> dict | None:
+        async with httpx.AsyncClient(base_url=self._base_url, auth=self._auth) as client:
+            deadline = asyncio.get_event_loop().time() + timeout
+            while True:
+                resp = await client.get(
+                    "/api/public/v2/observations", params={"name": name, "limit": 1}
+                )
+                resp.raise_for_status()
+                data = resp.json()["data"]
+                if data:
+                    return data[0]
+                if asyncio.get_event_loop().time() >= deadline:
+                    return None
+                await asyncio.sleep(interval)
+
+
+@pytest.fixture
+def platform_langfuse() -> LangfuseProbe:
+    host, _, port = LANGFUSE_URL.replace("http://", "").replace("https://", "").partition(":")
+    if not _reachable(host or "localhost", int(port or "3000")):
+        pytest.skip(
+            "Langfuse not reachable on "
+            f"{LANGFUSE_URL} (start the stack: "
+            "docker compose --profile core --profile clickhouse --profile objectstore "
+            "--profile observability up -d)"
+        )
+    return LangfuseProbe(LANGFUSE_URL, LANGFUSE_AUTH)
