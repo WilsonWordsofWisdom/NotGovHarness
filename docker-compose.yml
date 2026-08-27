@@ -124,6 +124,26 @@ services:
     depends_on:
       - otel-collector
 
+  identity-service:
+    profiles: ["identity"]
+    security_opt:
+      - seccomp:unconfined
+    build:
+      context: .
+      dockerfile: services/identity-service/Dockerfile
+    environment:
+      SERVICE_NAME: identity-service
+      ENV: dev
+      DATABASE_URL: postgresql+asyncpg://platform:platform@postgres:5432/identity
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+    ports:
+      - "8090:8000" # /oauth/token, /.well-known/jwks.json — published for skip-if-down tests
+    depends_on:
+      postgres:
+        condition: service_healthy
+      otel-collector:
+        condition: service_started
+
   clickhouse:
     image: clickhouse/clickhouse-server:25.12
     profiles: ["clickhouse"]
