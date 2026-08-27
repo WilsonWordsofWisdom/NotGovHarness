@@ -3,3 +3,4 @@
 -- `platform` database are created by the container's POSTGRES_* env vars.
 
 CREATE DATABASE example_service OWNER platform;
+CREATE DATABASE langfuse OWNER platform;

@@ -73,8 +73,10 @@ sizing; alerting; ClickHouse or ingestion data retention policy.
   archived/deprecated (MinIO stopped publishing free images, Oct 2025); use
   `cgr.dev/chainguard/minio`, matching Langfuse's own reference compose — see risks.
 - **`redis`** (Valkey-compatible) — cache + background-job queue for `langfuse-worker`.
-- **`langfuse-web`** — UI + public API, port 3000 behind Traefik (`/observability` prefix, dev-only
-  unauthenticated dashboard access, mirroring the Traefik-dashboard posture already in the repo).
+- **`langfuse-web`** — UI + public API, port 3000 published directly to the host (not routed
+  through Traefik — Next.js apps don't handle path-prefix stripping cleanly without explicit
+  `basePath` support, so this follows the same direct-port pattern already used for Jaeger and the
+  Traefik dashboard itself, rather than forcing a `/observability` prefix through the edge).
 - **`langfuse-worker`** — async ingestion pipeline (OTLP → ClickHouse), internal-only.
 
 All five live under a new **`observability`** compose profile pattern: `clickhouse` +

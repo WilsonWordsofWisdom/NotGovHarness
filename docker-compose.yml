@@ -1,7 +1,8 @@
 # NotGovHarness local platform stack.
-# Phase 0 `core` profile: edge + Postgres + event backbone + tracing baseline.
-# NOTE: authored but not yet verified against a running Docker daemon.
-# Later harnesses enable additional profiles (identity, clickhouse, objectstore, vector, temporal).
+# Phase 0 `core` profile: edge + Postgres + event backbone + tracing baseline (verified).
+# `clickhouse` / `objectstore` profiles: reusable analytics DB + blob store (Observability harness
+# adds langfuse-web/worker on top; later harnesses may reuse them directly).
+# Later harnesses enable further profiles (identity, observability, vector, temporal).
 # Project name comes from the directory (or set COMPOSE_PROJECT_NAME) for broad Compose compat.
 
 services:
@@ -27,6 +28,8 @@ services:
       POSTGRES_USER: platform
       POSTGRES_PASSWORD: platform
       POSTGRES_DB: platform
+      TZ: UTC
+      PGTZ: UTC
     ports:
       - "5432:5432"
     volumes:
@@ -121,5 +124,142 @@ services:
     depends_on:
       - otel-collector
 
+  clickhouse:
+    image: clickhouse/clickhouse-server:25.12
+    profiles: ["clickhouse"]
+    user: "101:101"
+    environment:
+      CLICKHOUSE_DB: default
+      CLICKHOUSE_USER: clickhouse
+      CLICKHOUSE_PASSWORD: clickhouse
+      TZ: UTC
+    volumes:
+      - clickhousedata:/var/lib/clickhouse
+      - clickhouselogs:/var/log/clickhouse-server
+    ports:
+      - "8123:8123" # HTTP interface
+      - "9000:9000" # native protocol
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:8123/ping || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 1s
+
+  minio:
+    # minio/minio on Docker Hub is archived (MinIO stopped publishing free images, Oct 2025).
+    # Chainguard's image only reliably serves `latest` on the free tier — pinned historical tags
+    # need an authenticated account — so this is a deliberate exception to pinning every image.
+    image: cgr.dev/chainguard/minio:latest
+    profiles: ["objectstore"]
+    entrypoint: sh
+    command: -c 'mkdir -p /data/langfuse && minio server --address ":9000" --console-address ":9001" /data'
+    environment:
+      MINIO_ROOT_USER: minio
+      MINIO_ROOT_PASSWORD: miniosecret123
+    ports:
+      - "9090:9000" # S3 API
+      - "9091:9001" # console
+    volumes:
+      - miniodata:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 1s
+
+  redis:
+    image: redis:7
+    profiles: ["observability"]
+    command: ["--requirepass", "myredissecret", "--maxmemory-policy", "noeviction"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "myredissecret", "ping"]
+      interval: 3s
+      timeout: 5s
+      retries: 10
+
+  # Langfuse env surface is ~60 vars upstream; only what this reference deployment needs is set
+  # here (dev-fixed secrets/keys, matching the platform/platform Postgres posture). `${VAR:-default}`
+  # substitution is used for this pair of services (not this file's usual literal-value style) to
+  # stay close to Langfuse's own tested reference compose — see the Observability harness spec.
+  langfuse-worker:
+    image: docker.langfuse.com/langfuse/langfuse-worker:4
+    profiles: ["observability"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      clickhouse:
+        condition: service_healthy
+    environment: &langfuse-worker-env
+      NEXTAUTH_URL: http://localhost:3000
+      DATABASE_URL: postgresql://platform:platform@postgres:5432/langfuse
+      SALT: notgovharness-dev-salt
+      ENCRYPTION_KEY: "859b2019e55e97c286ba56213d7d8bc8659c2bc700c39b3e0da9e59fcf5b5727"
+      TELEMETRY_ENABLED: "false"
+      CLICKHOUSE_MIGRATION_URL: clickhouse://clickhouse:9000
+      CLICKHOUSE_URL: http://clickhouse:8123
+      CLICKHOUSE_USER: clickhouse
+      CLICKHOUSE_PASSWORD: clickhouse
+      CLICKHOUSE_CLUSTER_ENABLED: "false"
+      LANGFUSE_S3_EVENT_UPLOAD_BUCKET: langfuse
+      LANGFUSE_S3_EVENT_UPLOAD_REGION: auto
+      LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID: minio
+      LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY: miniosecret123
+      LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT: http://minio:9000
+      LANGFUSE_S3_EVENT_UPLOAD_FORCE_PATH_STYLE: "true"
+      LANGFUSE_S3_EVENT_UPLOAD_PREFIX: events/
+      LANGFUSE_S3_MEDIA_UPLOAD_BUCKET: langfuse
+      LANGFUSE_S3_MEDIA_UPLOAD_REGION: auto
+      LANGFUSE_S3_MEDIA_UPLOAD_ACCESS_KEY_ID: minio
+      LANGFUSE_S3_MEDIA_UPLOAD_SECRET_ACCESS_KEY: miniosecret123
+      LANGFUSE_S3_MEDIA_UPLOAD_ENDPOINT: http://minio:9000
+      LANGFUSE_S3_MEDIA_UPLOAD_FORCE_PATH_STYLE: "true"
+      LANGFUSE_S3_MEDIA_UPLOAD_PREFIX: media/
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      REDIS_AUTH: myredissecret
+
+  langfuse-web:
+    image: docker.langfuse.com/langfuse/langfuse:4
+    profiles: ["observability"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      clickhouse:
+        condition: service_healthy
+    ports:
+      - "3000:3000" # UI + public API — direct (not via Traefik; see harness spec)
+    environment:
+      <<: *langfuse-worker-env
+      NEXTAUTH_SECRET: notgovharness-dev-nextauth-secret
+      # Browser-reachable, unlike the worker's internal minio:9000 endpoint above.
+      LANGFUSE_S3_MEDIA_UPLOAD_ENDPOINT: http://localhost:9090
+      LANGFUSE_INIT_ORG_ID: notgovharness
+      LANGFUSE_INIT_ORG_NAME: NotGovHarness
+      LANGFUSE_INIT_PROJECT_ID: platform
+      LANGFUSE_INIT_PROJECT_NAME: Platform
+      LANGFUSE_INIT_PROJECT_PUBLIC_KEY: pk-lf-00000000-0000-4000-8000-000000000000
+      LANGFUSE_INIT_PROJECT_SECRET_KEY: sk-lf-00000000-0000-4000-8000-000000000000
+      LANGFUSE_INIT_USER_EMAIL: dev@notgovharness.local
+      LANGFUSE_INIT_USER_NAME: dev
+      LANGFUSE_INIT_USER_PASSWORD: devpassword123
+
 volumes:
   pgdata:
+  clickhousedata:
+  clickhouselogs:
+  miniodata:
+  redisdata:
