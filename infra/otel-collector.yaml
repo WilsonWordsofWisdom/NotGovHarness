@@ -1,5 +1,5 @@
-# OTel Collector: receive OTLP from services, fan out to Jaeger (baseline).
-# Later, the Observability harness adds a Langfuse exporter to the traces pipeline.
+# OTel Collector: receive OTLP from services, fan out to Jaeger (baseline) and Langfuse
+# (Observability harness — LLM-aware trace store, same spans, no app-code changes).
 receivers:
   otlp:
     protocols:
@@ -16,6 +16,14 @@ exporters:
     endpoint: jaeger:4317
     tls:
       insecure: true
+  otlphttp/langfuse:
+    # Langfuse ingests OTLP/HTTP (protobuf) only, at /api/public/otel, auth'd via HTTP Basic Auth
+    # built from the seeded dev API-key pair (base64(public_key:secret_key) — see
+    # docker-compose.yml's langfuse-web LANGFUSE_INIT_PROJECT_*_KEY values).
+    endpoint: http://langfuse-web:3000/api/public/otel
+    encoding: proto
+    headers:
+      Authorization: "Basic cGstbGYtMDAwMDAwMDAtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDAwMDAwOnNrLWxmLTAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDAwMA=="
   debug:
     verbosity: normal
 
@@ -24,4 +32,4 @@ service:
     traces:
       receivers: [otlp]
       processors: [batch]
-      exporters: [otlp/jaeger, debug]
+      exporters: [otlp/jaeger, otlphttp/langfuse, debug]

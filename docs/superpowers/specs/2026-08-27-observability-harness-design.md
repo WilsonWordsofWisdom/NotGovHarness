@@ -47,7 +47,9 @@ zero manual UI steps to reach a working state from `task up`.
    exporter — verified by diffing `infra/otel-collector.yaml`, not by adding app code.
 4. A demo call through `example-service` → `upstream-stub` (the same `/proxy` hop Phase 0 uses)
    produces a trace visible in **both** Jaeger and Langfuse — checked against Langfuse's public API
-   (`GET /api/public/traces`), not just eyeballed in the UI, so it's scriptable/testable.
+   (`GET /api/public/v2/observations`, filtered by `traceId`; **not** `GET /api/public/traces`,
+   which 404s under Langfuse v4's default `events_only` mode — see risks), not just eyeballed in
+   the UI, so it's scriptable/testable.
 5. New Postgres `langfuse` DB provisioned per the existing db-per-service pattern
    (`infra/db/init/01-create-databases.sql`) for Langfuse's own metadata — separate from
    ClickHouse, which holds the trace/analytics data.
@@ -128,10 +130,12 @@ posture (Traefik's insecure dashboard, `platform`/`platform` Postgres creds).
    `LANGFUSE_INIT_*` seeding. *Verify:* Langfuse UI reachable, seeded API key pair confirmed via
    `GET /api/public/projects`.
 3. **`otel-collector` fan-out** — add the `otlphttp/langfuse` exporter. *Verify:* re-run the Phase 0
-   demo hop (`/example/proxy`), confirm the same trace appears in both Jaeger and Langfuse.
+   demo hop (`/example/proxy`), confirm the same trace appears in both Jaeger and Langfuse via
+   `GET /api/public/v2/observations?traceId=...` (the collector's `debug` exporter logs the
+   `traceId` to cross-check against).
 4. **Skip-if-down integration test** — script/test that exercises the demo hop and asserts via
-   Langfuse's public API that the trace landed. *Verify:* green locally; skips cleanly when the
-   `observability` profile isn't up.
+   Langfuse's `v2/observations` API that the trace landed. *Verify:* green locally; skips cleanly
+   when the `observability` profile isn't up.
 
 ## Testing strategy
 
@@ -153,6 +157,11 @@ posture (Traefik's insecure dashboard, `platform`/`platform` Postgres creds).
   does. Chainguard's free tier reliably serves only the `latest` tag — pinned historical tags need
   an authenticated Chainguard account — so this is a deliberate, documented exception to this
   repo's usual "pin every image" convention, not an oversight.
+- **Langfuse v4 runs in `events_only` mode by default** — the legacy `GET /api/public/traces` /
+  `GET /api/public/observations` (v1) endpoints 404 under this mode. Confirmed during build: use
+  the **Observations API v2** (`GET /api/public/v2/observations`, filterable by `traceId`/`name`/
+  time range) instead — it's the one that actually works, and is also the endpoint Evals (Wave 4)
+  should be pointed at later rather than the deprecated v1 surface.
 - **Self-hosted OTLP endpoint bug (resolved)** — an upstream issue (langfuse/langfuse#9900,
   reported against self-hosted v3.120.0) had the `/api/public/otel/v1/traces` endpoint hang
   indefinitely; the issue is closed. Still worth verifying the OTLP path explicitly during step 3
