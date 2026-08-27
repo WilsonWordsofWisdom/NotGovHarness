@@ -25,8 +25,9 @@ Observability has no hard dependency on Identity — it consumes the existing OT
 `platform-core`'s auth layer — but it does mean traces won't carry `spiffe_id`/`act`-chain
 attributes until Identity lands later; that's expected, not a gap to work around here.
 
-**Approach:** self-host Langfuse v3 (ClickHouse-backed; the version the docs already named,
-`decisions.md` line 60) as a **façade-free infra addition** — no new application code. The
+**Approach:** self-host Langfuse **v4** (ClickHouse-backed — the docs at `decisions.md` line 60
+just say "Langfuse"; v4 is the current default as of this spec, superseding v3) as a
+**façade-free infra addition** — no new application code. The
 integration point is entirely at the `otel-collector` config: add a second OTLP/HTTP exporter
 alongside the existing `otlp/jaeger` one. Services keep exporting to one collector endpoint exactly
 as they do today (`platform_core.otel`); they gain nothing to configure and nothing to import.
@@ -68,7 +69,9 @@ sizing; alerting; ClickHouse or ingestion data retention policy.
   compose profile (reusable — the plan already names it separately from `observability`, since
   later harnesses may share it).
 - **`minio`** — S3-compatible blob storage (Langfuse media/exports). New `objectstore` profile,
-  same reasoning — Wave 2 registries also want MinIO buckets later.
+  same reasoning — Wave 2 registries also want MinIO buckets later. `minio/minio` on Docker Hub is
+  archived/deprecated (MinIO stopped publishing free images, Oct 2025); use
+  `cgr.dev/chainguard/minio`, matching Langfuse's own reference compose — see risks.
 - **`redis`** (Valkey-compatible) — cache + background-job queue for `langfuse-worker`.
 - **`langfuse-web`** — UI + public API, port 3000 behind Traefik (`/observability` prefix, dev-only
   unauthenticated dashboard access, mirroring the Traefik-dashboard posture already in the repo).
@@ -137,14 +140,21 @@ posture (Traefik's insecure dashboard, `platform`/`platform` Postgres creds).
 
 ## Risks / watch-items
 
-- **Resource footprint** — Langfuse v3's recommended minimums (ClickHouse 8 GiB, web/worker 4 GiB
+- **Resource footprint** — Langfuse's recommended minimums (ClickHouse 8 GiB, web/worker 4 GiB
   each, Postgres 4 GiB, Redis 1.5 GiB, MinIO 4 GiB) sit on top of the existing Phase 0 stack;
   confirmed workable after raising the local Docker Desktop memory allocation to 31 GiB.
-- **Self-hosted OTLP endpoint bug** — an upstream issue
-  (langfuse/langfuse#9900) reports the `/api/public/otel/v1/traces` endpoint hanging indefinitely
-  on a recent release. Pin to a specific, tested Langfuse image tag (not `:latest`); verify the
-  OTLP path works during step 3 before relying on it, and have the Langfuse SDK's own OTLP-adjacent
-  ingestion documented as a fallback if the collector path is broken on the pinned version.
+- **ClickHouse version floor** — Langfuse v4 requires ClickHouse **>= 25.12** (26.4 recommended);
+  pin `clickhouse/clickhouse-server:25.12` (or later), matching Langfuse's own reference compose —
+  the older `>= 24.3` floor only applies to v3.
+- **MinIO's Docker Hub image is deprecated** — `minio/minio` was archived after MinIO stopped
+  publishing free images (Oct 2025). Use `cgr.dev/chainguard/minio`, as Langfuse's own compose
+  does. Chainguard's free tier reliably serves only the `latest` tag — pinned historical tags need
+  an authenticated Chainguard account — so this is a deliberate, documented exception to this
+  repo's usual "pin every image" convention, not an oversight.
+- **Self-hosted OTLP endpoint bug (resolved)** — an upstream issue (langfuse/langfuse#9900,
+  reported against self-hosted v3.120.0) had the `/api/public/otel/v1/traces` endpoint hang
+  indefinitely; the issue is closed. Still worth verifying the OTLP path explicitly during step 3
+  rather than assuming it works on whatever v4 patch we land on.
 - **ClickHouse/Postgres timezone** — both must run in UTC; non-UTC silently returns empty query
   results rather than erroring, so this is easy to miss.
 - **`LANGFUSE_INIT_*` ordering** — org must exist before project, project before API key; Docker
