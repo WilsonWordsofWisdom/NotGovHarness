@@ -33,6 +33,7 @@ LANGFUSE_AUTH = (
     os.getenv("PLATFORM_TEST_LANGFUSE_PUBLIC_KEY", "pk-lf-00000000-0000-4000-8000-000000000000"),
     os.getenv("PLATFORM_TEST_LANGFUSE_SECRET_KEY", "sk-lf-00000000-0000-4000-8000-000000000000"),
 )
+IDENTITY_URL = os.getenv("PLATFORM_TEST_IDENTITY_URL", "http://localhost:8090")
 
 
 def _reachable(host: str, port: int, timeout: float = 1.0) -> bool:
@@ -146,3 +147,15 @@ def platform_langfuse() -> LangfuseProbe:
             "--profile observability up -d)"
         )
     return LangfuseProbe(LANGFUSE_URL, LANGFUSE_AUTH)
+
+
+@pytest.fixture
+def platform_identity_url() -> str:
+    host, _, port = IDENTITY_URL.replace("http://", "").replace("https://", "").partition(":")
+    if not _reachable(host or "localhost", int(port or "8090")):
+        pytest.skip(
+            "identity-service not reachable on "
+            f"{IDENTITY_URL} (start the stack: "
+            "docker compose --profile core --profile identity up -d)"
+        )
+    return IDENTITY_URL

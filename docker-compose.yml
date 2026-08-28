@@ -97,6 +97,11 @@ services:
       KAFKA_BROKERS: redpanda:29092
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
       UPSTREAM_URL: http://upstream-stub:8000
+      # SVID socket only exists once the `identity` profile's spire-agent has attested — see
+      # svid.py. Not a depends_on: example-service/upstream-stub also run under `core` alone.
+      SPIFFE_ENDPOINT_SOCKET: unix:///run/spire/sockets/agent.sock
+    volumes:
+      - spiresockets:/run/spire/sockets:ro
     depends_on:
       - postgres
       - redpanda
@@ -121,8 +126,92 @@ services:
       SERVICE_NAME: upstream-stub
       ENV: dev
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+      SPIFFE_ENDPOINT_SOCKET: unix:///run/spire/sockets/agent.sock
+    volumes:
+      - spiresockets:/run/spire/sockets:ro
     depends_on:
       - otel-collector
+
+  identity-service:
+    profiles: ["identity"]
+    security_opt:
+      - seccomp:unconfined
+    build:
+      context: .
+      dockerfile: services/identity-service/Dockerfile
+    environment:
+      SERVICE_NAME: identity-service
+      ENV: dev
+      DATABASE_URL: postgresql+asyncpg://platform:platform@postgres:5432/identity
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+    ports:
+      - "8090:8000" # /oauth/token, /.well-known/jwks.json — published for skip-if-down tests
+    depends_on:
+      postgres:
+        condition: service_healthy
+      otel-collector:
+        condition: service_started
+
+  spire-server:
+    image: ghcr.io/spiffe/spire-server:1.15.1
+    container_name: spire-server # referenced by name from spire-bootstrap's `docker exec`
+    profiles: ["identity"]
+    # Image defaults to UID 1000, but a fresh named volume mounts root-owned — sqlite can't
+    # create its file there otherwise. Root inside a container is still namespace-isolated;
+    # matches this repo's existing local-dev-only pragmatism (Postgres/MinIO dev creds, etc).
+    user: "0:0"
+    volumes:
+      - ./infra/spire/server.conf:/run/spire/config/server.conf:ro
+      - spiredata:/run/spire/data
+    command: ["-config", "/run/spire/config/server.conf"]
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "/opt/spire/bin/spire-server",
+          "healthcheck",
+          "-socketPath",
+          "/run/spire/server/private/api.sock",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
+  # One-shot: generates the agent's join token + registers workload entries, then exits. See
+  # infra/spire/bootstrap.sh for why this runs via `docker exec` into spire-server rather than
+  # calling the spire-server binary directly (its image ships no shell).
+  spire-bootstrap:
+    image: docker:cli
+    profiles: ["identity"]
+    depends_on:
+      spire-server:
+        condition: service_healthy
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./infra/spire/bootstrap.sh:/bootstrap.sh:ro
+      - spirebootstrap:/run/spire/bootstrap
+    entrypoint: ["sh", "/bootstrap.sh"]
+
+  spire-agent:
+    image: ghcr.io/spiffe/spire-agent:1.15.1
+    profiles: ["identity"]
+    # The Docker workload attestor resolves a caller's PID (from the Workload API socket's peer
+    # credentials) to a container via /proc/<pid>/cgroup on its *own* filesystem view — without
+    # this, that PID is meaningless to spire-agent (it's in the calling container's own PID
+    # namespace). The kernel translates peer credentials into the receiver's namespace view
+    # automatically for nested namespaces, so only the agent needs this, not the workloads.
+    pid: host
+    depends_on:
+      spire-bootstrap:
+        condition: service_completed_successfully
+    volumes:
+      - ./infra/spire/agent.conf:/run/spire/config/agent.conf:ro
+      - spireagentdata:/run/spire/data
+      - spiresockets:/run/spire/sockets
+      - spirebootstrap:/run/spire/bootstrap:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro # Docker workload attestor
+    command: ["-config", "/run/spire/config/agent.conf"]
 
   clickhouse:
     image: clickhouse/clickhouse-server:25.12
@@ -263,3 +352,7 @@ volumes:
   clickhouselogs:
   miniodata:
   redisdata:
+  spiredata:
+  spireagentdata:
+  spiresockets:
+  spirebootstrap:

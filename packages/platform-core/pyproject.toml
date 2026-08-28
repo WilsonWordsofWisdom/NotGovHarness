@@ -20,6 +20,8 @@ dependencies = [
     "opentelemetry-instrumentation-httpx>=0.48b0",
     "opentelemetry-instrumentation-sqlalchemy>=0.48b0",
     "orjson>=3.10",
+    "pyjwt[crypto]>=2.9",
+    "spiffe>=0.3",
 ]
 
 [build-system]

@@ -27,3 +27,9 @@ class PlatformSettings(BaseSettings):
     database_url: str | None = None
     kafka_brokers: str = "localhost:9092"
     otel_exporter_otlp_endpoint: str | None = None
+
+    # ``auth_mode="oauth2"`` (Agent Identity harness) — required when set to that mode.
+    oauth2_jwks_url: str | None = None
+    oauth2_issuer: str | None = None
+    oauth2_audience: str | None = None
+    max_delegation_depth: int = 3

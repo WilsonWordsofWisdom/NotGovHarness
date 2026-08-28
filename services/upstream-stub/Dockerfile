@@ -14,4 +14,6 @@ RUN uv sync --package upstream-stub --frozen --no-dev
 
 ENV PATH="/app/.venv/bin:$PATH"
 EXPOSE 8000
-CMD ["uvicorn", "upstream_stub.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Not a plain `uvicorn ...` CLI invocation — run.py picks mTLS vs plain HTTP at startup depending
+# on whether SPIRE is available (the `identity` profile). See run.py's module docstring.
+CMD ["python", "-m", "upstream_stub.run"]
