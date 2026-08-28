@@ -26,6 +26,7 @@ from platform_core.events import (
 from platform_core.facade import UpstreamClient, raise_for_upstream
 from platform_core.facade import lifespan_hook as facade_lifespan
 from platform_core.logging import get_logger
+from platform_core.svid import try_x509_source
 
 from .config import WIDGET_TOPIC, ExampleSettings
 from .models import Widget
@@ -56,7 +57,12 @@ def build_app() -> FastAPI:
         settings.kafka_brokers, settings.service_name, [WIDGET_TOPIC], on_widget_event
     )
     get_session = session_dependency(db)
-    upstream = UpstreamClient(settings.upstream_url)
+    svid_source = try_x509_source()
+    upstream = UpstreamClient(
+        settings.upstream_url,
+        svid_source=svid_source,
+        expected_peer_spiffe_id=settings.upstream_spiffe_id if svid_source else None,
+    )
     require_identity = make_require_identity(settings)
 
     app = create_app(

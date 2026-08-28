@@ -46,6 +46,9 @@ class UpstreamClient:
             from .svid import build_client_ssl_context
 
             verify = build_client_ssl_context(svid_source)
+            # Callers pass one canonical http:// URL (e.g. from a compose env var); mTLS implies
+            # https, so that's this client's call to make, not something compose needs to know.
+            base_url = str(httpx.URL(base_url).copy_with(scheme="https"))
         self._client = httpx.AsyncClient(
             base_url=base_url, timeout=timeout, transport=transport, verify=verify
         )

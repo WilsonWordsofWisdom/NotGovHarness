@@ -57,14 +57,15 @@ def peer_spiffe_id(cert: bytes) -> SpiffeId:
     return SpiffeId(uris[0])
 
 
-@contextmanager
-def _pem_files(source: X509Source) -> Iterator[tuple[str, str, str]]:
-    """Write the current SVID + trust bundle to temp PEM files; yields (cert, key, ca) paths.
+def write_svid_files(source: X509Source, directory: str) -> tuple[str, str, str]:
+    """Write the current SVID + trust bundle as PEM files into ``directory``; returns their paths.
 
-    A temp-file bridge because Python's ``ssl`` module only loads certs/keys from paths, not the
-    ``cryptography`` objects the `spiffe` library hands back. SVIDs rotate (1h TTL here) — this
-    snapshots whatever's current at call time, matching this harness's scope (proving the
-    mechanism works, not running unattended for hours; see the harness spec's risks).
+    A file bridge because Python's ``ssl`` module (and uvicorn's ``ssl_keyfile``/``ssl_certfile``/
+    ``ssl_ca_certs`` flags) only load certs/keys from paths, not the ``cryptography`` objects the
+    `spiffe` library hands back. SVIDs rotate (1h TTL here) — this snapshots whatever's current at
+    call time; a long-running process would need to re-write and reload these to track rotation,
+    which this reference doesn't do (proving the mechanism works, not running unattended for
+    hours — see the harness spec's risks). Caller owns ``directory``'s lifecycle.
     """
     ctx = source.get_x509_context()
     svid = ctx.default_svid
@@ -74,25 +75,31 @@ def _pem_files(source: X509Source) -> Iterator[tuple[str, str, str]]:
         # SVID — reaching this means the source is in a broken state, not a normal runtime case.
         raise RuntimeError(f"no trust bundle for {svid.spiffe_id.trust_domain}")
 
-    with tempfile.TemporaryDirectory(prefix="svid-") as tmp:
-        cert_path = Path(tmp) / "svid.pem"
-        key_path = Path(tmp) / "key.pem"
-        ca_path = Path(tmp) / "bundle.pem"
+    cert_path = Path(directory) / "svid.pem"
+    key_path = Path(directory) / "key.pem"
+    ca_path = Path(directory) / "bundle.pem"
 
-        cert_path.write_bytes(
-            b"".join(c.public_bytes(serialization.Encoding.PEM) for c in svid.cert_chain)
+    cert_path.write_bytes(
+        b"".join(c.public_bytes(serialization.Encoding.PEM) for c in svid.cert_chain)
+    )
+    key_path.write_bytes(
+        svid.private_key.private_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PrivateFormat.PKCS8,
+            encryption_algorithm=serialization.NoEncryption(),
         )
-        key_path.write_bytes(
-            svid.private_key.private_bytes(
-                encoding=serialization.Encoding.PEM,
-                format=serialization.PrivateFormat.PKCS8,
-                encryption_algorithm=serialization.NoEncryption(),
-            )
-        )
-        ca_path.write_bytes(
-            b"".join(c.public_bytes(serialization.Encoding.PEM) for c in bundle.x509_authorities)
-        )
-        yield str(cert_path), str(key_path), str(ca_path)
+    )
+    ca_path.write_bytes(
+        b"".join(c.public_bytes(serialization.Encoding.PEM) for c in bundle.x509_authorities)
+    )
+    return str(cert_path), str(key_path), str(ca_path)
+
+
+@contextmanager
+def _pem_files(source: X509Source) -> Iterator[tuple[str, str, str]]:
+    """Same as ``write_svid_files``, but into a self-cleaning temp directory."""
+    with tempfile.TemporaryDirectory(prefix="svid-") as tmp:
+        yield write_svid_files(source, tmp)
 
 
 def build_client_ssl_context(source: X509Source) -> ssl.SSLContext:
