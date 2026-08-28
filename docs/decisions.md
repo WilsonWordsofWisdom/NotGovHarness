@@ -214,3 +214,39 @@ duplicating" and add a dependency every future service would need to remember.
 header comment already anticipated this split, and later waves plausibly reuse both (Wave 2
 registries want MinIO buckets; ClickHouse is a plausible fit for other analytics-shaped stores) —
 bundling them into one Langfuse-specific profile would mean re-deriving the split later.
+
+---
+
+## 2026-08-28 — Agent Identity harness built (Wave 1, steps 1-5 complete)
+
+Full design: [superpowers/specs/2026-08-23-agent-identity-harness-design.md](superpowers/specs/2026-08-23-agent-identity-harness-design.md).
+All 6 done-when criteria verified live, end to end, on `feat/wave1-agent-identity` (not yet
+merged). Real bugs found building SPIRE + mTLS are in that spec's risk section, not repeated here
+— these three are the actual design decisions.
+
+**D-024 — Server-side peer-SPIFFE-ID verification is a TLS-layer-only, non-goal for app code.**
+upstream-stub requires and validates a client cert against the SPIRE trust bundle
+(`ssl_cert_reqs=CERT_REQUIRED`) — real mutual authentication, only trust-domain-attested workloads
+can connect — but doesn't extract or assert the caller's *specific* SPIFFE ID inside app code.
+**Why:** uvicorn doesn't expose a client's peer certificate to ASGI apps through its public
+interface; every path to it (`request.scope["transport"].get_extra_info("ssl_object")`) reaches
+past that into undocumented internals a minor uvicorn upgrade could silently break. The client
+side doesn't have this problem — httpx's `network_stream`/`ssl_object` extension is documented and
+was verified working (including a `getpeercert(True)` positional-arg quirk) — so
+`UpstreamClient` verifies the *upstream's* identity fully; only the reverse direction is
+transport-layer-only.
+
+**D-025 — A third `auth_mode`, `"hybrid"`: verify a Bearer token when present, fall back to
+`dev`'s header behavior when absent.** upstream-stub needs to keep working under `core` alone (no
+identity-service) while also accepting real delegated tokens once one exists — a hard
+`auth_mode="oauth2"` switch would have broken Phase 0's already-verified plain-HTTP baseline.
+**Why:** `require_scope()` on top of `hybrid`'s fallback path would silently 403 every
+unauthenticated call (dev-mode `CallerIdentity` never carries scopes) — scope is only checked when
+`identity.mode == "delegated"`, which is what actually distinguishes a verified token from no
+token, not the presence of scopes.
+
+**D-026 — Identity is built on its own branch, not directly on `main`.** Two commits (token core,
+token exchange) had already landed on `main` before this was decided; they were moved to
+`feat/wave1-agent-identity` via two `git revert` commits on `main` plus a fresh branch carrying the
+originals — not a `reset` + force-push. **Why:** the two commits were already pushed to
+`origin/main`; rewriting shared history there needs an explicit, deliberate choice, not a default.

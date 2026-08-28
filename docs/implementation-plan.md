@@ -13,15 +13,21 @@ An approved Phase 0 scaffold spec, a decisions log (D-001…D-017), and an archi
 libraries/dependencies, the backend infra + databases, and the build order derived from
 dependencies. Phase 0 is the concrete gate before any harness is built.
 
-## Status (updated 2026-08-27)
+## Status (updated 2026-08-28)
 
 **Phase 0 is COMPLETE and merged to `main`** (PRs #2 + #3). All six success criteria verified.
 
-**Wave 1 progress:** the **Observability** harness (Langfuse v4) is built and verified — see
-[superpowers/specs/2026-08-27-observability-harness-design.md](superpowers/specs/2026-08-27-observability-harness-design.md)
-and decisions D-021..D-023. Built ahead of Identity (the plan's stated build-first harness) by
-explicit choice; see that spec's Context section for why this ordering is safe. Remaining Wave 1
-harnesses: Identity (design spec written, D-018..D-020, not yet built), LLM Gateway, Audit.
+**Wave 1 progress:**
+- **Observability** (Langfuse v4) — built and verified, merged to `main`. See
+  [superpowers/specs/2026-08-27-observability-harness-design.md](superpowers/specs/2026-08-27-observability-harness-design.md)
+  and decisions D-021..D-023. Built ahead of Identity (the plan's stated build-first harness) by
+  explicit choice; see that spec's Context section for why this ordering is safe.
+- **Agent Identity** — built and verified end to end (all 6 done-when criteria confirmed live,
+  including SPIRE-issued mTLS and a real RFC 8693 delegated token flowing through the demo hop).
+  On branch `feat/wave1-agent-identity`, **not yet merged to `main`**. See
+  [superpowers/specs/2026-08-23-agent-identity-harness-design.md](superpowers/specs/2026-08-23-agent-identity-harness-design.md)
+  and decisions D-024..D-026.
+- Remaining Wave 1 harnesses: LLM Gateway, Audit.
 
 | Area | State |
 |---|---|

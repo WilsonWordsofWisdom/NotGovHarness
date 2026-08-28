@@ -1,6 +1,8 @@
 # Agent Identity Harness — Design
 
-**Status:** approved design, pre-implementation
+**Status:** built and verified — all 6 done-when criteria confirmed live, end to end (a single
+Jaeger trace spans example-service → identity-service ×3 → upstream-stub; see the risks section
+for the real bugs found getting there). On branch `feat/wave1-agent-identity`, not yet merged.
 **Date:** 2026-08-23
 **Wave:** 1 (Foundation) · first harness
 **Branch:** `feat/wave1-agent-identity`
