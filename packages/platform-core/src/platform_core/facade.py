@@ -20,9 +20,12 @@ from fastapi import FastAPI
 
 from .auth import CallerIdentity
 from .errors import PlatformError
+from .logging import get_logger
 
 if TYPE_CHECKING:
     from spiffe import X509Source
+
+log = get_logger("platform_core.facade")
 
 
 class UpstreamPeerIdentityError(Exception):
@@ -87,6 +90,9 @@ class UpstreamClient:
             raise UpstreamPeerIdentityError(
                 f"upstream peer SPIFFE ID {actual!r} != expected {self._expected_peer_spiffe_id!r}"
             )
+        # The audit-relevant proof this mTLS hop is who it claims to be — see the harness spec's
+        # reference flow ("logs + one Jaeger trace show spiffe_id, sub, and the act chain").
+        log.info("upstream_peer_verified", spiffe_id=actual)
 
 
 def raise_for_upstream(response: httpx.Response) -> httpx.Response:
