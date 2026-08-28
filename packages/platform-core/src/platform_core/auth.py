@@ -5,6 +5,11 @@ Phase 0 shipped a dev stub: it reads an ``X-Service-Identity`` header and yields
 verifies a Bearer JWT against the issuing ``identity-service``'s JWKS (signature, iss, aud, exp,
 and max-delegation-depth) and yields the same ``CallerIdentity`` shape — new fields
 (``mode``/``on_behalf_of``/``actor_chain``) default empty, so ``dev``-mode callers are unaffected.
+
+``hybrid`` mode is for a service that must keep working under `core` alone (no identity-service)
+while also accepting real delegated tokens once one exists: verify a Bearer token as ``oauth2``
+when present, fall back to ``dev``'s header behavior when absent. upstream-stub uses this — it
+can't hard-require oauth2 without breaking Phase 0's already-verified plain-HTTP baseline.
 """
 
 from __future__ import annotations
@@ -61,6 +66,10 @@ def make_require_identity(
             return CallerIdentity(id=request.headers.get("x-service-identity", "anonymous"))
         if settings.auth_mode == "oauth2":
             return _verify_oauth2_bearer(request, settings)
+        if settings.auth_mode == "hybrid":
+            if request.headers.get("authorization", "").startswith("Bearer "):
+                return _verify_oauth2_bearer(request, settings)
+            return CallerIdentity(id=request.headers.get("x-service-identity", "anonymous"))
         raise NotImplementedError(f"auth_mode={settings.auth_mode!r} is not implemented in Phase 0")
 
     return require_identity

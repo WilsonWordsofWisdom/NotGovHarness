@@ -29,6 +29,7 @@ from platform_core.logging import get_logger
 from platform_core.svid import try_x509_source
 
 from .config import WIDGET_TOPIC, ExampleSettings
+from .identity_client import try_get_delegated_token
 from .models import Widget
 
 log = get_logger("example_service")
@@ -106,8 +107,24 @@ def build_app() -> FastAPI:
 
     @app.get("/proxy", tags=["facade"])
     async def proxy(identity: CallerIdentity = Depends(require_identity)) -> dict:
-        """Façade shape: forward to the upstream, propagating identity + trace context."""
-        response = await upstream.forward("GET", "/echo", identity=identity)
+        """Façade shape: forward to the upstream, propagating identity + trace context.
+
+        Fetches a real delegated token from identity-service (alice, the simulated principal,
+        acted for by this service) when it's reachable — otherwise falls back to the Phase 0
+        X-Service-Identity header, so this still works under `core` alone.
+        """
+        headers = {}
+        delegated_token = await try_get_delegated_token(
+            settings.identity_service_url,
+            actor_client_id=settings.identity_client_id,
+            actor_client_secret=settings.identity_client_secret,
+            principal_client_id=settings.principal_client_id,
+            principal_client_secret=settings.principal_client_secret,
+        )
+        if delegated_token:
+            headers["Authorization"] = f"Bearer {delegated_token}"
+
+        response = await upstream.forward("GET", "/echo", identity=identity, headers=headers)
         raise_for_upstream(response)
         return response.json()
 

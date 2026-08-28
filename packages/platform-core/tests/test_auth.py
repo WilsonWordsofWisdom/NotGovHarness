@@ -180,3 +180,32 @@ def test_oauth2_mode_requires_jwks_url_configured():
     # generic Exception handler still produces a 500 for a real server, but re-raises for tests).
     with pytest.raises(RuntimeError, match="oauth2_jwks_url"):
         TestClient(app).get("/whoami", headers={"Authorization": "Bearer x"})
+
+
+@pytest.fixture
+def hybrid_app(jwks_url):
+    return _app("hybrid", oauth2_jwks_url=jwks_url, oauth2_issuer=ISSUER, oauth2_audience=AUDIENCE)
+
+
+def test_hybrid_falls_back_to_dev_header_without_a_bearer_token(hybrid_app):
+    r = TestClient(hybrid_app).get("/whoami", headers={"x-service-identity": "builder"})
+    assert r.json()["id"] == "builder"
+    assert r.json()["mode"] == "autonomous"
+
+
+def test_hybrid_falls_back_to_anonymous_with_no_header_at_all(hybrid_app):
+    r = TestClient(hybrid_app).get("/whoami")
+    assert r.json()["id"] == "anonymous"
+
+
+def test_hybrid_verifies_a_bearer_token_when_present(hybrid_app, rsa_key):
+    token = _mint(rsa_key, sub="alice", mode="delegated", act={"sub": "example-service"}, depth=1)
+    r = TestClient(hybrid_app).get("/whoami", headers={"Authorization": f"Bearer {token}"})
+    body = r.json()
+    assert body["id"] == "example-service"
+    assert body["on_behalf_of"] == "alice"
+
+
+def test_hybrid_rejects_an_invalid_bearer_token_rather_than_falling_back(hybrid_app):
+    r = TestClient(hybrid_app).get("/whoami", headers={"Authorization": "Bearer not-a-real-jwt"})
+    assert r.status_code == 401
