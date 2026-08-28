@@ -172,3 +172,14 @@ workaround needed.
   stdout** — corrupted a naive `sed`-only token extraction (embedded newline + trailing text).
   Fixed by `grep '^Token:'` before the `sed`, so only the real token line is captured regardless
   of what else the CLI prints.
+- **The Docker workload attestor needs `pid: host` on spire-agent** — without it, every attestation
+  failed with "could not resolve caller information": the attestor resolves a caller's PID (from
+  the Workload API socket's peer credentials) to a container via `/proc/<pid>/cgroup` on its *own*
+  filesystem view, and a PID from a workload's separate PID namespace is meaningless there. Only
+  the agent needs `pid: host` — Linux translates peer credentials into the receiver's namespace
+  view automatically for nested namespaces, so example-service/upstream-stub keep their own
+  isolated PID namespaces.
+- **uvicorn logs `https://` even with a client cert requirement misconfigured** — its startup
+  banner only reflects whether `ssl_certfile` was set, not whether the handshake will actually
+  succeed; the real proof this harness relies on is a live request landing (or a plain-HTTP
+  negative control failing against the same port), not the banner text.

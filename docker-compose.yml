@@ -196,6 +196,12 @@ services:
   spire-agent:
     image: ghcr.io/spiffe/spire-agent:1.15.1
     profiles: ["identity"]
+    # The Docker workload attestor resolves a caller's PID (from the Workload API socket's peer
+    # credentials) to a container via /proc/<pid>/cgroup on its *own* filesystem view — without
+    # this, that PID is meaningless to spire-agent (it's in the calling container's own PID
+    # namespace). The kernel translates peer credentials into the receiver's namespace view
+    # automatically for nested namespaces, so only the agent needs this, not the workloads.
+    pid: host
     depends_on:
       spire-bootstrap:
         condition: service_completed_successfully
