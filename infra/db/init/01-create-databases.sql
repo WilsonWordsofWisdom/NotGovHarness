@@ -5,3 +5,4 @@
 CREATE DATABASE example_service OWNER platform;
 CREATE DATABASE langfuse OWNER platform;
 CREATE DATABASE identity OWNER platform;
+CREATE DATABASE audit OWNER platform;

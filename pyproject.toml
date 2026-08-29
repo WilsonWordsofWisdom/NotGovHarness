@@ -46,3 +46,8 @@ venv = ".venv"
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["packages", "services"]
+# Test dirs have no __init__.py, so pytest's default "prepend" import mode needs every test file's
+# basename unique across the whole workspace - every new service scaffolded from the copier
+# template starts with a test_smoke.py, so that broke the moment a second one existed.
+# importlib mode imports by fully-qualified path instead, sidestepping the collision.
+addopts = "--import-mode=importlib"
