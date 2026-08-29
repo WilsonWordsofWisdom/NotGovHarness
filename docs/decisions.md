@@ -271,3 +271,35 @@ the Consumer's own sequential dispatch loop is what keeps it race-free). Compose
 against someone scaling `audit-service` to multiple replicas. **Why:** a real distributed-safe
 chaining scheme (leader election, or an append-only log with compare-and-swap) is a production
 concern this reference platform doesn't need to solve to demonstrate tamper-evidence.
+
+---
+
+## 2026-08-30 — Agent Registry harness design (Wave 2, first of three)
+
+Full design: [superpowers/specs/2026-08-30-agent-registry-harness-design.md](superpowers/specs/2026-08-30-agent-registry-harness-design.md).
+
+**D-029 — identity-service signs Agent Cards with its existing OAuth2 key; no second trust
+root.** `POST /cards/sign` (new, scope-gated `agentcard:sign`) reuses the same `SigningKey`
+identity-service already holds for token issuance, and `agent-registry` verifies a card's
+signature against identity-service's existing `/.well-known/jwks.json` — the same JWKS mechanism
+`platform_core.auth` already uses to verify bearer tokens. **Why:** `implementation-plan.md`
+already named Identity "the trust root that signs Agent Cards" before this harness was designed;
+minting a second signing key for cards would duplicate key-management machinery this reference
+platform already built and verified in Wave 1.
+
+**D-030 — Agent Builder doesn't exist yet (Wave 4); an existing OAuth2 client stands in as
+publisher.** `architecture.md` shows Agent Builder publishing signed cards to the registry. This
+harness can't wait three waves, so `example-service`'s existing demo client is granted
+`agentcard:sign`/`registry:publish` scopes and plays the publisher role. **Why:** the same
+"simulated principal" pattern Identity's delegation demo already used (`alice` standing in for a
+real human) — the registry's REST contract (receive a signed card) doesn't change when a real
+Agent Builder eventually calls it instead.
+
+**D-031 — Signature verification checks decoded-payload equality, not byte-exact RFC 8785 JCS
+canonicalization.** The A2A spec calls for signing "the entire canonical AgentCard object" per a
+strict canonicalization scheme (JCS); this harness signs/verifies via `PyJWT`'s own JSON handling
+and compares the *decoded* payload dict against the submitted card, not re-serialized bytes.
+**Why:** real cryptographic tamper-evidence — the property this harness exists to prove — doesn't
+require byte-exact JCS for a reference platform with no external A2A verifier consuming these
+cards yet; a JCS implementation is real work worth doing only when interop with a third party is
+actually needed.

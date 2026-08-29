@@ -15,10 +15,12 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from platform_core.app import create_app
+from platform_core.auth import CallerIdentity, make_require_identity, require_scope
 from platform_core.context import current_trace_id
 from platform_core.db import Database, lifespan_hook, session_dependency
 from platform_core.errors import PlatformError
 
+from .cards import sign_card
 from .config import Settings
 from .keys import generate_signing_key
 from .models import Client
@@ -45,11 +47,19 @@ class ClientOut(BaseModel):
     allowed_scopes: str
 
 
+class CardSignOut(BaseModel):
+    signing_algorithm: str
+    signing_key_id: str
+    signature_value: str
+
+
 def build_app() -> FastAPI:
     settings = Settings()
     db = Database(settings.database_url)
     signing_key = generate_signing_key(pem=settings.oauth2_signing_key_pem)
     get_session = session_dependency(db)
+    require_identity = make_require_identity(settings)
+    require_sign_scope = require_scope(require_identity, "agentcard:sign")
 
     app = create_app(
         settings,
@@ -115,6 +125,13 @@ def build_app() -> FastAPI:
     @app.get("/.well-known/jwks.json", tags=["oauth2"])
     async def jwks() -> dict:
         return {"keys": [signing_key.jwk()]}
+
+    @app.post("/cards/sign", tags=["agent-registry"], response_model=CardSignOut)
+    async def sign_agent_card(
+        card: dict, _identity: CallerIdentity = Depends(require_sign_scope)
+    ) -> dict:
+        # No second trust root — the same key that signs OAuth2 tokens signs Agent Cards (D-029).
+        return sign_card(signing_key, card)
 
     @app.post("/clients", tags=["admin"], response_model=ClientOut)
     async def register_client(
