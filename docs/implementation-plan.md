@@ -13,7 +13,7 @@ An approved Phase 0 scaffold spec, a decisions log (D-001…D-017), and an archi
 libraries/dependencies, the backend infra + databases, and the build order derived from
 dependencies. Phase 0 is the concrete gate before any harness is built.
 
-## Status (updated 2026-08-28)
+## Status (updated 2026-08-29)
 
 **Phase 0 is COMPLETE and merged to `main`** (PRs #2 + #3). All six success criteria verified.
 
@@ -24,10 +24,16 @@ dependencies. Phase 0 is the concrete gate before any harness is built.
   explicit choice; see that spec's Context section for why this ordering is safe.
 - **Agent Identity** — built and verified end to end (all 6 done-when criteria confirmed live,
   including SPIRE-issued mTLS and a real RFC 8693 delegated token flowing through the demo hop).
-  On branch `feat/wave1-agent-identity`, **not yet merged to `main`**. See
+  **Merged to `main`.** See
   [superpowers/specs/2026-08-23-agent-identity-harness-design.md](superpowers/specs/2026-08-23-agent-identity-harness-design.md)
   and decisions D-024..D-026.
-- Remaining Wave 1 harnesses: LLM Gateway, Audit.
+- **Audit plane** — built and verified end to end (all 6 done-when criteria confirmed live: a
+  real widget created through example-service flowed through Redpanda into the hash-chained log,
+  and a row tampered with directly in Postgres was caught by `/audit/verify`). On branch
+  `feat/wave1-audit-plane`, **not yet merged to `main`**. See
+  [superpowers/specs/2026-08-29-audit-plane-harness-design.md](superpowers/specs/2026-08-29-audit-plane-harness-design.md)
+  and decisions D-027..D-028.
+- Remaining Wave 1 harness: LLM Gateway.
 
 | Area | State |
 |---|---|
