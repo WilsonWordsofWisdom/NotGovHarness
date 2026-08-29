@@ -12,6 +12,7 @@ from typing import Any
 import jwt
 from fastapi import Depends, FastAPI
 from pydantic import BaseModel
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -117,6 +118,101 @@ def build_app() -> FastAPI:
             "published_by": row.published_by,
             "created_at": row.created_at.isoformat(),
         }
+
+    @app.get("/agents", tags=["agent-registry"])
+    async def list_agents(
+        skill: str | None = None, session: AsyncSession = Depends(get_session)
+    ) -> list[dict[str, Any]]:
+        rows = (
+            await session.execute(select(AgentCard).order_by(AgentCard.name, AgentCard.version))
+        ).scalars()
+        summaries = []
+        for row in rows:
+            skill_names = [s.get("name") for s in (row.skills or [])]
+            if skill is not None and skill not in skill_names:
+                continue
+            summaries.append(
+                {
+                    "name": row.name,
+                    "version": row.version,
+                    "description": row.description,
+                    "url": row.url,
+                    "skills": skill_names,
+                    "created_at": row.created_at.isoformat(),
+                }
+            )
+        return summaries
+
+    async def _latest(session: AsyncSession, name: str) -> AgentCard:
+        row = (
+            await session.execute(
+                select(AgentCard)
+                .where(AgentCard.name == name)
+                .order_by(AgentCard.created_at.desc())
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        if row is None:
+            raise PlatformError(
+                "not_found", f"no agent card published for {name!r}", status_code=404
+            )
+        return row
+
+    async def _version(session: AsyncSession, name: str, version: str) -> AgentCard:
+        row = (
+            await session.execute(
+                select(AgentCard).where(AgentCard.name == name, AgentCard.version == version)
+            )
+        ).scalar_one_or_none()
+        if row is None:
+            raise PlatformError(
+                "not_found",
+                f"no agent card published for {name!r} version {version!r}",
+                status_code=404,
+            )
+        return row
+
+    def _card_out(row: AgentCard) -> dict[str, Any]:
+        return {
+            "id": row.id,
+            "card": row.card,
+            "signature": {
+                "signing_algorithm": row.signing_algorithm,
+                "signing_key_id": row.signing_key_id,
+                "signature_value": row.signature_value,
+            },
+            "published_by": row.published_by,
+            "created_at": row.created_at.isoformat(),
+        }
+
+    @app.get("/agents/{name}", tags=["agent-registry"])
+    async def get_latest_agent(
+        name: str, session: AsyncSession = Depends(get_session)
+    ) -> dict[str, Any]:
+        return _card_out(await _latest(session, name))
+
+    @app.get("/agents/{name}/{version}", tags=["agent-registry"])
+    async def get_agent_version(
+        name: str, version: str, session: AsyncSession = Depends(get_session)
+    ) -> dict[str, Any]:
+        return _card_out(await _version(session, name, version))
+
+    @app.get("/agents/{name}/{version}/verify", tags=["agent-registry"])
+    async def verify_agent_version(
+        name: str, version: str, session: AsyncSession = Depends(get_session)
+    ) -> dict[str, Any]:
+        row = await _version(session, name, version)
+        try:
+            verify_card_signature(
+                jwks_client,
+                row.card,
+                row.signing_algorithm,
+                row.signing_key_id,
+                row.signature_value,
+            )
+        except CardVerificationError as exc:
+            return {"valid": False, "reason": exc.reason}
+        return {"valid": True, "reason": None}
 
     return app
 
