@@ -1,6 +1,9 @@
 # Agent Registry Harness — Design
 
-**Status:** design — not yet built.
+**Status:** built and verified — all 6 done-when criteria confirmed live: a real signed Agent
+Card, signed by a running identity-service and published to a running agent-registry, was fetched
+back byte-for-byte, and a card tampered with directly in Postgres (bypassing every service) was
+caught by `/verify` at exactly that row. Not yet merged to `main`.
 **Date:** 2026-08-30
 **Wave:** 2 (Catalog & Registries) · first of three
 **Branch:** `feat/wave2-agent-registry`
@@ -149,7 +152,13 @@ tampered card, wrong algorithm) is a 401.
   equivalent tamper-evidence, but not interoperable with a strict external A2A verifier expecting
   JCS bytes. Acceptable for a reference platform proving the mechanism; would need a real JCS
   implementation before this card format is presented to a third-party A2A consumer.
-- **Self-referential JWKS.** identity-service verifies its own bearer tokens using its own
-  `/.well-known/jwks.json` to protect `/cards/sign`. Not circular in a harmful sense — an
-  authorization server validating a token it issued via its own published keys is exactly the
-  standard resource-server pattern — but worth a raised eyebrow on first read.
+- **Self-referential JWKS-over-HTTP deadlocks a single-worker server — found live, fixed with
+  `verify_own_token`.** The original design called for protecting `/cards/sign` with
+  `platform_core.auth`'s standard `oauth2`/`hybrid` mode, pointed at identity-service's own JWKS
+  endpoint. The very first real request hung until timeout: the synchronous JWKS-over-HTTP fetch
+  inside the request handler blocks the one event-loop thread uvicorn (single worker) needs free
+  to accept and answer that same self-directed connection. Fixed by authenticating via
+  `verify_own_token` (already used for token-exchange) instead — no network hop, since
+  identity-service already holds `signing_key` in-process. See D-032. Every downstream JWKS
+  consumer (`agent-registry` verifying card signatures, `upstream-stub` verifying bearer tokens)
+  is unaffected — they verify a *different* service's material, not their own.

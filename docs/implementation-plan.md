@@ -13,7 +13,7 @@ An approved Phase 0 scaffold spec, a decisions log (D-001…D-017), and an archi
 libraries/dependencies, the backend infra + databases, and the build order derived from
 dependencies. Phase 0 is the concrete gate before any harness is built.
 
-## Status (updated 2026-08-29)
+## Status (updated 2026-08-30)
 
 **Phase 0 is COMPLETE and merged to `main`** (PRs #2 + #3). All six success criteria verified.
 
@@ -33,7 +33,22 @@ dependencies. Phase 0 is the concrete gate before any harness is built.
   `main`.** See
   [superpowers/specs/2026-08-29-audit-plane-harness-design.md](superpowers/specs/2026-08-29-audit-plane-harness-design.md)
   and decisions D-027..D-028.
-- Remaining Wave 1 harness: LLM Gateway.
+- Remaining Wave 1 harness: LLM Gateway (paused — see below).
+
+**Wave 2 progress:**
+- **Agent Registry** — built and verified end to end (all 6 done-when criteria confirmed live: a
+  real Agent Card, signed by a running identity-service's `POST /cards/sign` and published to a
+  running agent-registry, was fetched back byte-for-byte, and a card tampered with directly in
+  Postgres was caught by `/verify`). Not yet merged to `main`. See
+  [superpowers/specs/2026-08-30-agent-registry-harness-design.md](superpowers/specs/2026-08-30-agent-registry-harness-design.md)
+  and decisions D-029..D-032 — D-032 in particular: the first design for `/cards/sign`'s auth hit
+  a real self-deadlock (a single-worker server making a synchronous HTTP call to itself), fixed
+  live by switching to identity-service's existing in-process `verify_own_token`.
+- LLM Gateway (Wave 1) is paused by explicit choice: GovTech Platform AI was chosen as the
+  provider, but the API key/base URL/auth details haven't been provided yet, and the key must
+  never be committed to GitHub (local `.env` only, `${VAR}` substitution). Building Wave 2's
+  registries (Identity-dependent, not LLM-Gateway-dependent) doesn't block on this.
+- Remaining Wave 2 harnesses: Skill Registry, Eval Registry.
 
 | Area | State |
 |---|---|

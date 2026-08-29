@@ -303,3 +303,16 @@ and compares the *decoded* payload dict against the submitted card, not re-seria
 require byte-exact JCS for a reference platform with no external A2A verifier consuming these
 cards yet; a JCS implementation is real work worth doing only when interop with a third party is
 actually needed.
+
+**D-032 — `/cards/sign` authenticates via `verify_own_token` (in-process), not
+`platform_core.auth`'s `oauth2`/`hybrid` mode.** Found live, the hard way: wiring `/cards/sign`
+through the standard JWKS-over-HTTP path (`oauth2_jwks_url` pointed at identity-service's own
+`/.well-known/jwks.json`) deadlocked the container on the very first real request — a genuine
+timeout, not a config typo. **Why:** identity-service is single-worker uvicorn; the request
+handler's *synchronous* JWKS fetch blocks the one event-loop thread that would need to be free to
+accept and answer that very HTTP connection to itself. `verify_own_token` (already used by
+`/oauth/token`'s token-exchange grant to verify `subject_token`/`actor_token` without a network
+hop) sidesteps the problem entirely rather than working around it — identity-service already holds
+`signing_key` in-process, so self-verification never needed HTTP in the first place. Every
+*downstream* consumer of identity-service's JWKS (`agent-registry`, `upstream-stub`) is unaffected
+— they're verifying someone else's token/signature, not deadlocking against themselves.

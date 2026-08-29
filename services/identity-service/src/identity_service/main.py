@@ -15,7 +15,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from platform_core.app import create_app
-from platform_core.auth import CallerIdentity, make_require_identity, require_scope
 from platform_core.context import current_trace_id
 from platform_core.db import Database, lifespan_hook, session_dependency
 from platform_core.errors import PlatformError
@@ -58,8 +57,25 @@ def build_app() -> FastAPI:
     db = Database(settings.database_url)
     signing_key = generate_signing_key(pem=settings.oauth2_signing_key_pem)
     get_session = session_dependency(db)
-    require_identity = make_require_identity(settings)
-    require_sign_scope = require_scope(require_identity, "agentcard:sign")
+
+    def require_sign_scope(request: Request) -> str:
+        # verify_own_token, not platform_core.auth's oauth2 mode: that mode fetches the JWKS
+        # over HTTP, and identity-service calling *itself* over HTTP from inside the one
+        # request-handling coroutine that would need to be free to answer that very call
+        # deadlocks a single-worker uvicorn process (found live — D-032). identity-service
+        # already holds signing_key in-process; verifying its own tokens needs no network hop.
+        auth_header = request.headers.get("authorization", "")
+        if not auth_header.startswith("Bearer "):
+            raise PlatformError("unauthorized", "missing bearer token", status_code=401)
+        try:
+            claims = verify_own_token(signing_key, settings, auth_header.removeprefix("Bearer "))
+        except TokenExchangeError as exc:
+            raise PlatformError("unauthorized", f"invalid token: {exc}", status_code=401) from exc
+        if "agentcard:sign" not in claims.get("scope", "").split():
+            raise PlatformError(
+                "forbidden", "missing required scope: 'agentcard:sign'", status_code=403
+            )
+        return claims["sub"]
 
     app = create_app(
         settings,
@@ -127,9 +143,7 @@ def build_app() -> FastAPI:
         return {"keys": [signing_key.jwk()]}
 
     @app.post("/cards/sign", tags=["agent-registry"], response_model=CardSignOut)
-    async def sign_agent_card(
-        card: dict, _identity: CallerIdentity = Depends(require_sign_scope)
-    ) -> dict:
+    async def sign_agent_card(card: dict, _sub: str = Depends(require_sign_scope)) -> dict:
         # No second trust root — the same key that signs OAuth2 tokens signs Agent Cards (D-029).
         return sign_card(signing_key, card)
 

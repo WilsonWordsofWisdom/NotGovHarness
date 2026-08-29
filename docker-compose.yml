@@ -175,6 +175,29 @@ services:
       redpanda:
         condition: service_started
 
+  agent-registry:
+    profiles: ["registry"]
+    security_opt:
+      - seccomp:unconfined
+    build:
+      context: .
+      dockerfile: services/agent-registry/Dockerfile
+    environment:
+      SERVICE_NAME: agent-registry
+      ENV: dev
+      DATABASE_URL: postgresql+asyncpg://platform:platform@postgres:5432/agent_registry
+      OAUTH2_JWKS_URL: http://identity-service:8000/.well-known/jwks.json
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+    ports:
+      - "8092:8000" # /agents, /agents/{name}[/{version}][/verify] — published for skip-if-down tests
+    depends_on:
+      postgres:
+        condition: service_healthy
+      otel-collector:
+        condition: service_started
+      identity-service:
+        condition: service_started
+
   spire-server:
     image: ghcr.io/spiffe/spire-server:1.15.1
     container_name: spire-server # referenced by name from spire-bootstrap's `docker exec`
