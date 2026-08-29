@@ -10,3 +10,4 @@ CREATE DATABASE audit OWNER platform;
 -- between tests for isolation, which is only safe against a DB nothing else writes to. The live
 -- audit-service container (and test_live_stack.py, which exercises it for real) uses `audit`.
 CREATE DATABASE audit_test OWNER platform;
+CREATE DATABASE agent_registry OWNER platform;
