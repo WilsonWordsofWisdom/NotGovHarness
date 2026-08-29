@@ -29,8 +29,8 @@ dependencies. Phase 0 is the concrete gate before any harness is built.
   and decisions D-024..D-026.
 - **Audit plane** — built and verified end to end (all 6 done-when criteria confirmed live: a
   real widget created through example-service flowed through Redpanda into the hash-chained log,
-  and a row tampered with directly in Postgres was caught by `/audit/verify`). On branch
-  `feat/wave1-audit-plane`, **not yet merged to `main`**. See
+  and a row tampered with directly in Postgres was caught by `/audit/verify`). **Merged to
+  `main`.** See
   [superpowers/specs/2026-08-29-audit-plane-harness-design.md](superpowers/specs/2026-08-29-audit-plane-harness-design.md)
   and decisions D-027..D-028.
 - Remaining Wave 1 harness: LLM Gateway.
