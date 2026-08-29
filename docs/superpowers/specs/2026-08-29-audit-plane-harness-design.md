@@ -1,6 +1,9 @@
 # Audit Plane Harness — Design
 
-**Status:** approved design, pre-implementation
+**Status:** built and verified — all 6 done-when criteria confirmed live: a real widget created
+through example-service's HTTP API flowed through Redpanda into the hash-chained log, and a row
+tampered with directly in Postgres (bypassing every service) was caught by `/audit/verify` at
+exactly that row. Not yet merged to `main`.
 **Date:** 2026-08-29
 **Wave:** 1 (Foundation) · fourth of four
 **Branch:** `feat/wave1-audit-plane`
@@ -114,3 +117,8 @@ means no `SELECT ... FOR UPDATE` locking is needed to read-then-write the previo
   if the two ever need to be told apart during an investigation.
 - **Only one real topic exists yet** — the harness is scoped to `platform.example.v1` today; adding
   a topic is a one-line change to the `Consumer`'s topic list, not a design change.
+- **SQLAlchemy's `text()` misparses `:param::type` with no space** — a raw `UPDATE ... SET data =
+  :data::jsonb` (used in the live tampering test, to forge a row's content the same way a DB-level
+  attacker would) hit a Postgres syntax error; SQLAlchemy's bind-parameter scanner reads
+  `:data::jsonb` as part of the parameter name, not a cast. `:data ::jsonb` (a space before the
+  cast) fixes it — worth remembering for any future raw-SQL cast in this codebase.

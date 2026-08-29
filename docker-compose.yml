@@ -152,6 +152,29 @@ services:
       otel-collector:
         condition: service_started
 
+  audit-service:
+    profiles: ["audit"]
+    security_opt:
+      - seccomp:unconfined
+    build:
+      context: .
+      dockerfile: services/audit-service/Dockerfile
+    environment:
+      SERVICE_NAME: audit-service
+      ENV: dev
+      DATABASE_URL: postgresql+asyncpg://platform:platform@postgres:5432/audit
+      KAFKA_BROKERS: redpanda:29092
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+    ports:
+      - "8091:8000" # /audit/records, /audit/verify — published for skip-if-down tests
+    depends_on:
+      postgres:
+        condition: service_healthy
+      otel-collector:
+        condition: service_started
+      redpanda:
+        condition: service_started
+
   spire-server:
     image: ghcr.io/spiffe/spire-server:1.15.1
     container_name: spire-server # referenced by name from spire-bootstrap's `docker exec`
