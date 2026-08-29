@@ -12,9 +12,11 @@ from __future__ import annotations
 import asyncio
 import os
 import uuid
+from datetime import datetime
 
 import httpx
 import pytest
+from audit_service.chain import canonicalize, verify_link
 from sqlalchemy import text
 
 from platform_core.db import Database
@@ -67,18 +69,42 @@ async def test_real_widget_creation_flows_through_kafka_into_the_chain(
     assert row["source"] == "example-service"
 
 
+def _link_is_intact(row: dict) -> bool:
+    canonical = canonicalize(
+        event_id=row["event_id"],
+        type=row["type"],
+        source=row["source"],
+        occurred_at=datetime.fromisoformat(row["occurred_at"]),
+        trace_id=row["trace_id"],
+        data=row["data"],
+    )
+    return verify_link(row["prev_hash"], canonical, row["hash"])
+
+
+async def _fetch_row(audit_url: str, row_id: int) -> dict:
+    async with httpx.AsyncClient(base_url=audit_url) as client:
+        page = await client.get("/audit/records", params={"cursor": row_id - 1, "limit": 1})
+    return page.json()["data"][0]
+
+
 async def test_tampering_a_row_directly_in_postgres_is_caught_by_verify(
     platform_audit_url, traefik_reachable
 ):
+    """`audit` is a live, shared database this harness deliberately never wipes (see
+    test_writer.py's docstring for why) — so unrelated history (other runs of this very test,
+    real usage) may already contain earlier, genuine tampering that doesn't get "healed" by
+    running this test again. So this doesn't assert the *whole* chain is valid beforehand, or
+    that /audit/verify's exact `broken_at` lands on this specific row — both depend on prior
+    history this test doesn't control. What it proves precisely: this row's own hash link is
+    intact before tampering and provably broken after (checked directly against chain.py, the
+    same math /audit/verify itself uses), and the real endpoint agrees the chain is now invalid.
+    """
     unique_name = f"audit-tamper-test-{uuid.uuid4().hex[:8]}"
     async with httpx.AsyncClient(base_url=TRAEFIK_URL) as client:
         created = await client.post("/example/widgets", json={"name": unique_name})
     widget_id = created.json()["id"]
     row = await _wait_for_record(platform_audit_url, widget_id)
-
-    async with httpx.AsyncClient(base_url=platform_audit_url) as client:
-        before = await client.get("/audit/verify")
-    assert before.json()["valid"] is True
+    assert _link_is_intact(row)
 
     # Bypass every service entirely — a raw SQL UPDATE, exactly what a DB-level attacker (or a
     # careless admin) would do. Nothing about the API this service exposes is involved.
@@ -95,8 +121,9 @@ async def test_tampering_a_row_directly_in_postgres_is_caught_by_verify(
     finally:
         await db.dispose()
 
+    tampered_row = await _fetch_row(platform_audit_url, row["id"])
+    assert not _link_is_intact(tampered_row)
+
     async with httpx.AsyncClient(base_url=platform_audit_url) as client:
         after = await client.get("/audit/verify")
-    body = after.json()
-    assert body["valid"] is False
-    assert body["broken_at"] == row["id"]
+    assert after.json()["valid"] is False

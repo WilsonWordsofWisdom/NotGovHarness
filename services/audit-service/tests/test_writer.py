@@ -1,6 +1,10 @@
 """Skip-if-down: a stub event list produces the expected chain (per the harness spec's step-3
 verify criterion). Needs real Postgres — the audit_log table's `data` column is JSONB, a
 Postgres-specific type, so this can't run against an infra-free in-memory substitute.
+
+Uses `audit_test`, a dedicated database — *not* `audit`, which the live audit-service container
+writes to. This fixture wipes the table between tests for isolation; doing that against a database
+something else is concurrently consuming real Kafka events into would silently destroy real data.
 """
 
 from __future__ import annotations
@@ -19,7 +23,7 @@ from platform_testing.fixtures import _reachable
 
 AUDIT_DB_URL = os.getenv(
     "PLATFORM_TEST_AUDIT_DATABASE_URL",
-    "postgresql+asyncpg://platform:platform@localhost:5432/audit",
+    "postgresql+asyncpg://platform:platform@localhost:5432/audit_test",
 )
 
 

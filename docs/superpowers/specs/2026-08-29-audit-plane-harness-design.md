@@ -122,3 +122,15 @@ means no `SELECT ... FOR UPDATE` locking is needed to read-then-write the previo
   attacker would) hit a Postgres syntax error; SQLAlchemy's bind-parameter scanner reads
   `:data::jsonb` as part of the parameter name, not a cast. `:data ::jsonb` (a space before the
   cast) fixes it — worth remembering for any future raw-SQL cast in this codebase.
+- **Tests must never wipe the `audit` database — found the hard way, pre-merge.** The first
+  versions of `test_writer.py`/`test_api.py` deleted the whole `audit_log` table between tests for
+  isolation. That's only safe against a database nothing else writes to — `audit` is written to
+  continuously by the live `audit-service` container, so running `test_writer.py` alone silently
+  destroyed real rows (confirmed directly: 4 real rows in, 0 after one `pytest` invocation). Fixed
+  with a dedicated `audit_test` database for those two files; `test_live_stack.py` correctly keeps
+  using the real `audit` database (that's its whole point) and never deletes from it. A downstream
+  consequence: since `audit` is shared, permanent, and legitimately accumulates real tampering
+  incidents that don't self-heal, `test_live_stack.py`'s tampering test can't assume the chain is
+  globally valid beforehand or that `/audit/verify`'s `broken_at` lands on any specific row — it
+  checks its own row's hash link directly (the same math `/audit/verify` uses) instead, which
+  holds regardless of unrelated prior history.

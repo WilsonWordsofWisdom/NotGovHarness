@@ -1,6 +1,10 @@
 """Skip-if-down: GET /audit/records and GET /audit/verify against real Postgres (same JSONB
 constraint as test_writer.py). Reuses writer.append_event to seed rows rather than duplicating
 chain-building logic.
+
+Uses `audit_test`, a dedicated database — *not* `audit`, which the live audit-service container
+writes to. This exercises a *separate* app instance (imported and pointed at audit_test via
+monkeypatch) rather than the real running container, so it's safe to wipe between tests.
 """
 
 from __future__ import annotations
@@ -19,7 +23,7 @@ from platform_testing.fixtures import _reachable
 
 AUDIT_DB_URL = os.getenv(
     "PLATFORM_TEST_AUDIT_DATABASE_URL",
-    "postgresql+asyncpg://platform:platform@localhost:5432/audit",
+    "postgresql+asyncpg://platform:platform@localhost:5432/audit_test",
 )
 
 
