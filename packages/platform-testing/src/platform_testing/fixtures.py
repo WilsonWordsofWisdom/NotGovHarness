@@ -34,6 +34,7 @@ LANGFUSE_AUTH = (
     os.getenv("PLATFORM_TEST_LANGFUSE_SECRET_KEY", "sk-lf-00000000-0000-4000-8000-000000000000"),
 )
 IDENTITY_URL = os.getenv("PLATFORM_TEST_IDENTITY_URL", "http://localhost:8090")
+AUDIT_URL = os.getenv("PLATFORM_TEST_AUDIT_URL", "http://localhost:8091")
 
 
 def _reachable(host: str, port: int, timeout: float = 1.0) -> bool:
@@ -159,3 +160,15 @@ def platform_identity_url() -> str:
             "docker compose --profile core --profile identity up -d)"
         )
     return IDENTITY_URL
+
+
+@pytest.fixture
+def platform_audit_url() -> str:
+    host, _, port = AUDIT_URL.replace("http://", "").replace("https://", "").partition(":")
+    if not _reachable(host or "localhost", int(port or "8091")):
+        pytest.skip(
+            "audit-service not reachable on "
+            f"{AUDIT_URL} (start the stack: "
+            "docker compose --profile core --profile audit up -d)"
+        )
+    return AUDIT_URL

@@ -250,3 +250,24 @@ token exchange) had already landed on `main` before this was decided; they were 
 `feat/wave1-agent-identity` via two `git revert` commits on `main` plus a fresh branch carrying the
 originals — not a `reset` + force-push. **Why:** the two commits were already pushed to
 `origin/main`; rewriting shared history there needs an explicit, deliberate choice, not a default.
+
+---
+
+## 2026-08-29 — Audit plane harness design (Wave 1, fourth of four)
+
+Full design: [superpowers/specs/2026-08-29-audit-plane-harness-design.md](superpowers/specs/2026-08-29-audit-plane-harness-design.md).
+
+**D-027 — Hash-chain integrity over Postgres alone; MinIO WORM stays a documented non-goal.**
+D-016 named MinIO WORM as optional. A single append-only Postgres table where each row's hash
+covers the previous row's hash plus its own canonical content already gives the property that
+matters — undetected tampering becomes detectable — without a second storage layer. **Why:** the
+point of this harness is proving that property, not standing up more infrastructure; WORM object
+storage is a genuine hardening step for a production deployment, not something this reference needs
+to demonstrate the mechanism.
+
+**D-028 — Single-consumer-instance is an assumed, documented constraint, not an enforced one.**
+Hash-chaining a running total needs a single writer (no `SELECT ... FOR UPDATE` locking is used —
+the Consumer's own sequential dispatch loop is what keeps it race-free). Compose doesn't guard
+against someone scaling `audit-service` to multiple replicas. **Why:** a real distributed-safe
+chaining scheme (leader election, or an append-only log with compare-and-swap) is a production
+concern this reference platform doesn't need to solve to demonstrate tamper-evidence.

@@ -5,3 +5,8 @@
 CREATE DATABASE example_service OWNER platform;
 CREATE DATABASE langfuse OWNER platform;
 CREATE DATABASE identity OWNER platform;
+CREATE DATABASE audit OWNER platform;
+-- Separate from `audit`: audit-service's own tests (test_writer.py, test_api.py) wipe this table
+-- between tests for isolation, which is only safe against a DB nothing else writes to. The live
+-- audit-service container (and test_live_stack.py, which exercises it for real) uses `audit`.
+CREATE DATABASE audit_test OWNER platform;
