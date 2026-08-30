@@ -61,17 +61,17 @@ dependencies. Phase 0 is the concrete gate before any harness is built.
   engine-agnostic `{engine, metric_id, params}` metrics envelope over DeepEval's `Golden` field
   names. Two suite kinds (`cases`/`redteam`) since red-teaming generates adversarial inputs
   rather than asserting on fixed ones. Gained a judge-rubric prompt-injection scan (reusing a new
-  shared `platform_core.contentscan` engine extracted from Skill Registry's scan). Not yet merged
-  to `main`. See
+  shared `platform_core.contentscan` engine extracted from Skill Registry's scan). **Merged to
+  `main`.** See
   [superpowers/specs/2026-08-30-eval-registry-harness-design.md](superpowers/specs/2026-08-30-eval-registry-harness-design.md)
   and decisions D-039..D-042.
 - LLM Gateway (Wave 1) is paused by explicit choice: GovTech Platform AI was chosen as the
   provider, but the API key/base URL/auth details haven't been provided yet, and the key must
   never be committed to GitHub (local `.env` only, `${VAR}` substitution). Building Wave 2's
   registries (Identity-dependent, not LLM-Gateway-dependent) doesn't block on this.
-- **Wave 2 is now complete** (Agent Registry, Skill Registry, Eval Registry — all merged or
-  ready to merge). Wave 3 (Runtime & Policy) is next, pending LLM Gateway (paused) for some of
-  its harnesses.
+- **Wave 2 is now complete and merged to `main`** (Agent Registry, Skill Registry, Eval
+  Registry). Wave 3 (Runtime & Policy) is next, pending LLM Gateway (paused) for some of its
+  harnesses.
 
 | Area | State |
 |---|---|
