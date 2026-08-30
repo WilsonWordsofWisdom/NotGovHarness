@@ -16,3 +16,5 @@ CREATE DATABASE agent_registry OWNER platform;
 CREATE DATABASE agent_registry_test OWNER platform;
 CREATE DATABASE skill_registry OWNER platform;
 CREATE DATABASE skill_registry_test OWNER platform;
+CREATE DATABASE eval_registry OWNER platform;
+CREATE DATABASE eval_registry_test OWNER platform;

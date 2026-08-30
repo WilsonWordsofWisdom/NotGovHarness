@@ -85,11 +85,11 @@ def build_app() -> FastAPI:
             raise PlatformError(
                 "unsafe_bundle",
                 "bundle failed the malicious-content scan: "
-                + "; ".join(f"{f.file}: {f.detail} ({f.rule})" for f in block_findings),
+                + "; ".join(f"{f.label}: {f.detail} ({f.rule})" for f in block_findings),
                 status_code=422,
             )
         warn_findings = [
-            {"file": f.file, "rule": f.rule, "detail": f.detail}
+            {"file": f.label, "rule": f.rule, "detail": f.detail}
             for f in scan_result.findings
             if f.severity == "warn"
         ]

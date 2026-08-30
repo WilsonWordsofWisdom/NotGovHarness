@@ -227,6 +227,35 @@ services:
       identity-service:
         condition: service_started
 
+  eval-registry:
+    profiles: ["registry"]
+    security_opt:
+      - seccomp:unconfined
+    build:
+      context: .
+      dockerfile: services/eval-registry/Dockerfile
+    environment:
+      SERVICE_NAME: eval-registry
+      ENV: dev
+      DATABASE_URL: postgresql+asyncpg://platform:platform@postgres:5432/eval_registry
+      OAUTH2_JWKS_URL: http://identity-service:8000/.well-known/jwks.json
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: minio
+      MINIO_SECRET_KEY: miniosecret123
+      MINIO_BUCKET: eval-registry
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+    ports:
+      - "8094:8000" # /suites, /suites/{name}[/{version}][/dataset] — published for skip-if-down tests
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      otel-collector:
+        condition: service_started
+      identity-service:
+        condition: service_started
+
   spire-server:
     image: ghcr.io/spiffe/spire-server:1.15.1
     container_name: spire-server # referenced by name from spire-bootstrap's `docker exec`
