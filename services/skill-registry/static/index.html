@@ -1,0 +1,393 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Skill Registry</title>
+<style>
+  :root {
+    --bg: #f7f7f5;
+    --surface: #ffffff;
+    --border: #e2e0da;
+    --text: #24231f;
+    --text-dim: #6b6a63;
+    --accent: #7a5cff;
+    --accent-ink: #ffffff;
+    --danger: #b3261e;
+    --danger-bg: #fbebea;
+    --warn: #8a5a00;
+    --warn-bg: #fdf3dc;
+    --ok: #146c2e;
+    --ok-bg: #e8f6ec;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #17161c;
+      --surface: #201f27;
+      --border: #34323d;
+      --text: #ece9f7;
+      --text-dim: #a29fb3;
+      --accent: #a48bff;
+      --accent-ink: #17161c;
+      --danger: #ff8f87;
+      --danger-bg: #3a201f;
+      --warn: #f0c26b;
+      --warn-bg: #3a2f14;
+      --ok: #7fd99a;
+      --ok-bg: #16301f;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #17161c;
+    --surface: #201f27;
+    --border: #34323d;
+    --text: #ece9f7;
+    --text-dim: #a29fb3;
+    --accent: #a48bff;
+    --accent-ink: #17161c;
+    --danger: #ff8f87;
+    --danger-bg: #3a201f;
+    --warn: #f0c26b;
+    --warn-bg: #3a2f14;
+    --ok: #7fd99a;
+    --ok-bg: #16301f;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    line-height: 1.5;
+  }
+  .wrap { max-width: 960px; margin: 0 auto; padding: 2rem 1.5rem 4rem; }
+  header { margin-bottom: 1.5rem; }
+  header h1 { font-size: 1.5rem; margin: 0 0 0.25rem; letter-spacing: -0.01em; }
+  header p { margin: 0; color: var(--text-dim); font-size: 0.95rem; }
+
+  nav { display: flex; gap: 0.5rem; border-bottom: 1px solid var(--border); margin-bottom: 1.5rem; }
+  nav button {
+    background: none; border: none; cursor: pointer;
+    padding: 0.6rem 0.9rem; font-size: 0.9rem; color: var(--text-dim);
+    border-bottom: 2px solid transparent; margin-bottom: -1px;
+    font-family: inherit;
+  }
+  nav button.active { color: var(--text); border-bottom-color: var(--accent); font-weight: 600; }
+
+  .panel { display: none; }
+  .panel.active { display: block; }
+
+  input[type="text"], input[type="password"], input[type="search"], input[type="file"] {
+    width: 100%; padding: 0.55rem 0.7rem; border-radius: 8px;
+    border: 1px solid var(--border); background: var(--surface); color: var(--text);
+    font-family: inherit; font-size: 0.9rem;
+  }
+  label { display: block; font-size: 0.82rem; color: var(--text-dim); margin: 0.9rem 0 0.3rem; }
+  label:first-child { margin-top: 0; }
+
+  button.primary {
+    background: var(--accent); color: var(--accent-ink); border: none;
+    border-radius: 8px; padding: 0.6rem 1.1rem; font-size: 0.9rem; font-weight: 600;
+    cursor: pointer; font-family: inherit; margin-top: 1.1rem;
+  }
+  button.primary:disabled { opacity: 0.55; cursor: default; }
+
+  .card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+    padding: 0.9rem 1rem; margin-bottom: 0.6rem; cursor: pointer;
+  }
+  .card:hover { border-color: var(--accent); }
+  .card h3 { margin: 0 0 0.25rem; font-size: 0.98rem; }
+  .card p { margin: 0; color: var(--text-dim); font-size: 0.86rem; }
+
+  .empty { color: var(--text-dim); font-size: 0.9rem; padding: 1.5rem 0; text-align: center; }
+
+  .detail {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+    padding: 1.1rem 1.2rem; margin-top: 1rem;
+  }
+  .detail h2 { margin: 0 0 0.2rem; font-size: 1.15rem; }
+  .detail .meta { color: var(--text-dim); font-size: 0.82rem; margin-bottom: 0.8rem; }
+  .detail .meta span { margin-right: 1rem; }
+  .field-row { display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.8rem; }
+  .field-row input { flex: 1; }
+  .field-row button {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+    padding: 0.5rem 0.8rem; cursor: pointer; font-family: inherit; color: var(--text);
+    font-size: 0.85rem;
+  }
+
+  pre.skillmd {
+    background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+    padding: 0.9rem; overflow-x: auto; font-family: var(--mono); font-size: 0.8rem;
+    white-space: pre-wrap; word-break: break-word; max-height: 22rem; overflow-y: auto;
+  }
+
+  .findings { margin-top: 0.7rem; }
+  .finding {
+    display: flex; gap: 0.5rem; padding: 0.5rem 0.7rem; border-radius: 8px;
+    font-size: 0.82rem; margin-bottom: 0.4rem; align-items: baseline;
+  }
+  .finding.warn { background: var(--warn-bg); color: var(--warn); }
+  .finding .file { font-family: var(--mono); font-weight: 600; }
+
+  .download-link {
+    display: inline-block; margin-top: 0.9rem; font-size: 0.85rem;
+    color: var(--accent); text-decoration: none; font-weight: 600;
+  }
+
+  .help {
+    background: var(--surface); border: 1px dashed var(--border); border-radius: 8px;
+    padding: 0.8rem 1rem; font-size: 0.82rem; color: var(--text-dim); margin-bottom: 1.2rem;
+  }
+  .help code {
+    display: block; background: var(--bg); border-radius: 6px; padding: 0.5rem 0.6rem;
+    margin-top: 0.4rem; font-family: var(--mono); font-size: 0.76rem; overflow-x: auto;
+    color: var(--text);
+  }
+
+  .result {
+    margin-top: 1.1rem; padding: 0.8rem 1rem; border-radius: 8px; font-size: 0.86rem;
+  }
+  .result.ok { background: var(--ok-bg); color: var(--ok); }
+  .result.err { background: var(--danger-bg); color: var(--danger); }
+  .result .warn-line { color: var(--warn); margin-top: 0.4rem; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Skill Registry</h1>
+    <p>Browse published <code>SKILL.md</code> bundles, or publish one of your own.</p>
+  </header>
+
+  <nav>
+    <button id="tab-browse" class="active">Browse</button>
+    <button id="tab-publish">Publish</button>
+  </nav>
+
+  <section id="panel-browse" class="panel active">
+    <input type="search" id="search" placeholder="Search by name or description…" />
+    <div id="list" style="margin-top: 1rem;"></div>
+    <div id="detail-slot"></div>
+  </section>
+
+  <section id="panel-publish" class="panel">
+    <div class="help">
+      This form needs a bearer token already scoped for <code>skill_registry:publish</code> —
+      never paste a client secret into a web page. Get one from identity-service first:
+      <code>curl -X POST http://localhost:8090/oauth/token \
+  -d grant_type=client_credentials -d client_id=&lt;your-client&gt; \
+  -d client_secret=&lt;your-secret&gt; -d scope=skill_registry:publish</code>
+      then paste the <code>access_token</code> below.
+    </div>
+
+    <form id="publish-form">
+      <label for="token">Bearer token</label>
+      <input type="password" id="token" autocomplete="off" required />
+
+      <label for="version">Version</label>
+      <input type="text" id="version" placeholder="1.0.0" required />
+
+      <label for="file">Skill bundle (.zip, containing &lt;name&gt;/SKILL.md)</label>
+      <input type="file" id="file" accept=".zip" required />
+
+      <button type="submit" class="primary">Publish</button>
+    </form>
+    <div id="publish-result"></div>
+  </section>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  function el(tag, opts) {
+    const node = document.createElement(tag);
+    if (opts) {
+      if (opts.text !== undefined) node.textContent = opts.text;
+      if (opts.class) node.className = opts.class;
+      if (opts.attrs) for (const k in opts.attrs) node.setAttribute(k, opts.attrs[k]);
+    }
+    return node;
+  }
+
+  function clear(node) {
+    while (node.firstChild) node.removeChild(node.firstChild);
+  }
+
+  // ---- tabs ----
+  const tabBrowse = document.getElementById("tab-browse");
+  const tabPublish = document.getElementById("tab-publish");
+  const panelBrowse = document.getElementById("panel-browse");
+  const panelPublish = document.getElementById("panel-publish");
+
+  function showTab(name) {
+    const browsing = name === "browse";
+    tabBrowse.classList.toggle("active", browsing);
+    tabPublish.classList.toggle("active", !browsing);
+    panelBrowse.classList.toggle("active", browsing);
+    panelPublish.classList.toggle("active", !browsing);
+  }
+  tabBrowse.addEventListener("click", () => showTab("browse"));
+  tabPublish.addEventListener("click", () => showTab("publish"));
+
+  // ---- browse ----
+  const listEl = document.getElementById("list");
+  const detailSlot = document.getElementById("detail-slot");
+  const searchEl = document.getElementById("search");
+
+  async function loadList(q) {
+    clear(listEl);
+    let rows;
+    try {
+      const url = "/skills" + (q ? "?q=" + encodeURIComponent(q) : "");
+      const resp = await fetch(url);
+      if (!resp.ok) throw new Error("request failed: " + resp.status);
+      rows = await resp.json();
+    } catch (err) {
+      listEl.appendChild(el("div", { class: "empty", text: "Couldn't load skills: " + err.message }));
+      return;
+    }
+    if (rows.length === 0) {
+      listEl.appendChild(el("div", { class: "empty", text: "No skills published yet." }));
+      return;
+    }
+    for (const row of rows) {
+      const card = el("div", { class: "card" });
+      card.appendChild(el("h3", { text: row.name }));
+      card.appendChild(el("p", { text: row.description }));
+      card.addEventListener("click", () => loadDetail(row.name));
+      listEl.appendChild(card);
+    }
+  }
+
+  function findingRow(f) {
+    const row = el("div", { class: "finding warn" });
+    const file = el("span", { class: "file", text: f.file + ":" });
+    row.appendChild(file);
+    row.appendChild(el("span", { text: " " + f.detail + " (" + f.rule + ")" }));
+    return row;
+  }
+
+  async function loadDetail(name, version) {
+    clear(detailSlot);
+    let skill;
+    try {
+      const path = version
+        ? "/skills/" + encodeURIComponent(name) + "/" + encodeURIComponent(version)
+        : "/skills/" + encodeURIComponent(name);
+      const resp = await fetch(path);
+      if (!resp.ok) throw new Error("request failed: " + resp.status);
+      skill = await resp.json();
+    } catch (err) {
+      detailSlot.appendChild(el("div", { class: "empty", text: "Couldn't load skill: " + err.message }));
+      return;
+    }
+
+    const box = el("div", { class: "detail" });
+    box.appendChild(el("h2", { text: skill.name }));
+
+    const meta = el("div", { class: "meta" });
+    meta.appendChild(el("span", { text: "version " + skill.version }));
+    if (skill.license) meta.appendChild(el("span", { text: "license: " + skill.license }));
+    if (skill.compatibility) meta.appendChild(el("span", { text: skill.compatibility }));
+    meta.appendChild(el("span", { text: (skill.bundle_size_bytes / 1024).toFixed(1) + " KiB bundle" }));
+    box.appendChild(meta);
+
+    const fieldRow = el("div", { class: "field-row" });
+    const versionInput = el("input", { attrs: { type: "text", placeholder: "version (blank = latest)" } });
+    versionInput.value = skill.version;
+    const goBtn = el("button", { text: "Load version" });
+    goBtn.addEventListener("click", () => loadDetail(name, versionInput.value.trim() || undefined));
+    fieldRow.appendChild(versionInput);
+    fieldRow.appendChild(goBtn);
+    box.appendChild(fieldRow);
+
+    box.appendChild(el("pre", { class: "skillmd", text: skill.skill_md }));
+
+    if (skill.scan_findings && skill.scan_findings.length > 0) {
+      const findings = el("div", { class: "findings" });
+      findings.appendChild(el("div", { text: "Advisory scan warnings (published, but flagged):" }));
+      for (const f of skill.scan_findings) findings.appendChild(findingRow(f));
+      box.appendChild(findings);
+    }
+
+    const dl = el("a", {
+      text: "Download bundle (" + skill.name + "-" + skill.version + ".zip)",
+      class: "download-link",
+      attrs: {
+        href: "/skills/" + encodeURIComponent(skill.name) + "/" + encodeURIComponent(skill.version) + "/bundle",
+      },
+    });
+    box.appendChild(dl);
+
+    detailSlot.appendChild(box);
+  }
+
+  let searchTimer;
+  searchEl.addEventListener("input", () => {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => loadList(searchEl.value.trim()), 250);
+  });
+
+  // ---- publish ----
+  const form = document.getElementById("publish-form");
+  const resultEl = document.getElementById("publish-result");
+
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    clear(resultEl);
+    const token = document.getElementById("token").value.trim();
+    const version = document.getElementById("version").value.trim();
+    const fileInput = document.getElementById("file");
+    const file = fileInput.files[0];
+    if (!file) return;
+
+    const body = new FormData();
+    body.append("file", file);
+    body.append("version", version);
+
+    const submitBtn = form.querySelector("button[type=submit]");
+    submitBtn.disabled = true;
+    try {
+      const resp = await fetch("/skills", {
+        method: "POST",
+        headers: { Authorization: "Bearer " + token },
+        body: body,
+      });
+      const data = await resp.json();
+      if (!resp.ok) {
+        const box = el("div", { class: "result err" });
+        const message = (data && data.error && data.error.message) || "publish failed";
+        box.appendChild(el("div", { text: message }));
+        resultEl.appendChild(box);
+      } else {
+        const box = el("div", { class: "result ok" });
+        box.appendChild(el("div", { text: "Published " + data.name + " " + data.version + "." }));
+        if (data.scan_warnings && data.scan_warnings.length > 0) {
+          for (const w of data.scan_warnings) {
+            const line = el("div", { class: "warn-line", text: w.file + ": " + w.detail + " (" + w.rule + ")" });
+            box.appendChild(line);
+          }
+        }
+        resultEl.appendChild(box);
+        form.reset();
+        loadList(searchEl.value.trim());
+      }
+    } catch (err) {
+      const box = el("div", { class: "result err", text: "Network error: " + err.message });
+      resultEl.appendChild(box);
+    } finally {
+      submitBtn.disabled = false;
+    }
+  });
+
+  loadList("");
+})();
+</script>
+</body>
+</html>

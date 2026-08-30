@@ -73,7 +73,35 @@ resolution between skills. Shelling out to the external `skills-ref` CLI (the va
 simple enough to hand-implement; see Context). Signing (the standard has none). Content-quality
 linting of *why* a description is good (the spec's "should describe what and when" guidance is a
 SHOULD, not a MUST — only structural constraints are enforced, matching what `skills-ref validate`
-itself checks).
+itself checks). A sandboxed/dynamic malware analysis engine (the scan added in steps 6-7 is
+static pattern-matching — see below); human authentication/login for the browse+publish UI (it
+takes an already-obtained bearer token, the same thing every other flow in this platform uses —
+see D-037).
+
+## Addendum: malicious-content scan + browse/publish UI (added after initial build)
+
+Two follow-on additions, requested after the harness's original 5 steps were built and verified:
+a static malicious-content scan on publish (a skill's whole point is being *read and followed* by
+an agent, so this is a real registry-level concern, not scope creep into the separate Guardrails
+harness), and a small self-hosted web page for browsing and publishing skills.
+
+- **`scan.py`** — pattern-matches every text-like file in a bundle (SKILL.md included, since
+  prose *is* the attack surface here — a malicious instruction doesn't need any code at all) for
+  destructive commands, reverse-shell/credential-exfiltration patterns, disallowed/disguised
+  binaries, and prompt-injection phrasing. `block`-severity findings reject the publish (422);
+  `warn`-severity findings are stored (`scan_findings` column) and surfaced but don't block. This
+  is heuristic static analysis, not a sandboxed dynamic scan or an ML classifier — it catches
+  unsophisticated, copy-pasted malicious content and says nothing about a novel or carefully
+  obfuscated attack. See D-038.
+- **`static/index.html`** — a single self-contained page (vanilla JS/CSS, no build step, no
+  external dependencies) mounted at `GET /ui`, served by skill-registry itself. Browse hits
+  `GET /skills`/`GET /skills/{name}[/{version}]` directly (same-origin, no auth needed for reads);
+  Publish takes a bearer token the user already obtained via `curl` against identity-service —
+  never a client secret (see D-037) — plus a version and a zip file, and calls `POST /skills`
+  with it. All dynamic content (skill names, descriptions, `SKILL.md` bodies — all
+  publisher-controlled, since anyone with a publish-scoped token can set them) is rendered via
+  `textContent`, never `innerHTML`, since this page renders other users' uploaded content back to
+  every visitor — a stored-XSS surface if that content were ever inserted as raw HTML.
 
 ## Components
 
