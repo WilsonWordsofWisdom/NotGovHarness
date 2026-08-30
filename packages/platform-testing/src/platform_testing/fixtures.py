@@ -35,6 +35,7 @@ LANGFUSE_AUTH = (
 )
 IDENTITY_URL = os.getenv("PLATFORM_TEST_IDENTITY_URL", "http://localhost:8090")
 AUDIT_URL = os.getenv("PLATFORM_TEST_AUDIT_URL", "http://localhost:8091")
+AGENT_REGISTRY_URL = os.getenv("PLATFORM_TEST_AGENT_REGISTRY_URL", "http://localhost:8092")
 
 
 def _reachable(host: str, port: int, timeout: float = 1.0) -> bool:
@@ -172,3 +173,15 @@ def platform_audit_url() -> str:
             "docker compose --profile core --profile audit up -d)"
         )
     return AUDIT_URL
+
+
+@pytest.fixture
+def platform_agent_registry_url() -> str:
+    host, _, port = AGENT_REGISTRY_URL.replace("http://", "").replace("https://", "").partition(":")
+    if not _reachable(host or "localhost", int(port or "8092")):
+        pytest.skip(
+            "agent-registry not reachable on "
+            f"{AGENT_REGISTRY_URL} (start the stack: "
+            "docker compose --profile core --profile identity --profile registry up -d)"
+        )
+    return AGENT_REGISTRY_URL
