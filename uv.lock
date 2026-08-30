@@ -9,6 +9,7 @@ resolution-markers = [
 
 [manifest]
 members = [
+    "agent-gateway",
     "agent-registry",
     "audit-service",
     "eval-registry",
@@ -20,6 +21,17 @@ members = [
     "skill-registry",
     "upstream-stub",
 ]
+
+[[package]]
+name = "agent-gateway"
+version = "0.1.0"
+source = { editable = "services/agent-gateway" }
+dependencies = [
+    { name = "platform-core" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "platform-core", editable = "packages/platform-core" }]
 
 [[package]]
 name = "agent-registry"
