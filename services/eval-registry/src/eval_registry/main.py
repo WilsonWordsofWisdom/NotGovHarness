@@ -13,7 +13,8 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any
 
-from fastapi import Depends, FastAPI, Form, UploadFile
+from fastapi import Depends, FastAPI, Form, Response, UploadFile
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -21,7 +22,7 @@ from platform_core.app import create_app
 from platform_core.auth import CallerIdentity, make_require_identity, require_scope
 from platform_core.db import Database, lifespan_hook, session_dependency
 from platform_core.errors import PlatformError
-from platform_core.objectstore import ObjectStore
+from platform_core.objectstore import ObjectNotFoundError, ObjectStore
 
 from .config import Settings
 from .models import Suite
@@ -154,6 +155,100 @@ def build_app() -> FastAPI:
             "created_at": row.created_at.isoformat(),
             "scan_warnings": warn_findings,
         }
+
+    @app.get("/suites", tags=["eval-registry"])
+    async def list_suites(
+        applies_to: str | None = None, session: AsyncSession = Depends(get_session)
+    ) -> list[dict[str, Any]]:
+        # Ordered by created_at within each name, so the last row seen per name is the same
+        # "latest" GET /suites/{name} would return.
+        rows = (
+            await session.execute(select(Suite).order_by(Suite.name, Suite.created_at))
+        ).scalars()
+        seen: dict[str, dict[str, Any]] = {}
+        for row in rows:
+            if applies_to is not None and applies_to not in row.applies_to:
+                continue
+            seen[row.name] = {
+                "name": row.name,
+                "description": row.description,
+                "kind": row.kind,
+                "applies_to": row.applies_to,
+            }
+        return list(seen.values())
+
+    async def _latest(session: AsyncSession, name: str) -> Suite:
+        row = (
+            await session.execute(
+                select(Suite).where(Suite.name == name).order_by(Suite.created_at.desc()).limit(1)
+            )
+        ).scalar_one_or_none()
+        if row is None:
+            raise PlatformError("not_found", f"no suite published for {name!r}", status_code=404)
+        return row
+
+    async def _version(session: AsyncSession, name: str, version: str) -> Suite:
+        row = (
+            await session.execute(select(Suite).where(Suite.name == name, Suite.version == version))
+        ).scalar_one_or_none()
+        if row is None:
+            raise PlatformError(
+                "not_found",
+                f"no suite published for {name!r} version {version!r}",
+                status_code=404,
+            )
+        return row
+
+    def _suite_out(row: Suite) -> dict[str, Any]:
+        return {
+            "id": row.id,
+            "name": row.name,
+            "version": row.version,
+            "description": row.description,
+            "kind": row.kind,
+            "applies_to": row.applies_to,
+            "metrics": row.metrics,
+            "redteam_config": row.redteam_config,
+            "case_count": row.case_count,
+            "scan_findings": row.scan_findings,
+            "published_by": row.published_by,
+            "created_at": row.created_at.isoformat(),
+        }
+
+    @app.get("/suites/{name}", tags=["eval-registry"])
+    async def get_latest_suite(
+        name: str, session: AsyncSession = Depends(get_session)
+    ) -> dict[str, Any]:
+        return _suite_out(await _latest(session, name))
+
+    @app.get("/suites/{name}/{version}", tags=["eval-registry"])
+    async def get_suite_version(
+        name: str, version: str, session: AsyncSession = Depends(get_session)
+    ) -> dict[str, Any]:
+        return _suite_out(await _version(session, name, version))
+
+    @app.get("/suites/{name}/{version}/dataset", tags=["eval-registry"])
+    async def download_dataset(
+        name: str, version: str, session: AsyncSession = Depends(get_session)
+    ) -> Response:
+        row = await _version(session, name, version)
+        if row.dataset_object_key is None:
+            raise PlatformError(
+                "no_dataset",
+                f"suite {name!r} version {version!r} has no dataset (kind={row.kind!r})",
+                status_code=404,
+            )
+        try:
+            data = await store.get_object(row.dataset_object_key)
+        except ObjectNotFoundError as exc:
+            raise PlatformError(
+                "dataset_missing", f"stored dataset object is missing: {exc}", status_code=500
+            ) from exc
+        return Response(
+            content=data,
+            media_type="application/x-ndjson",
+            headers={"Content-Disposition": f'attachment; filename="{name}-{version}.jsonl"'},
+        )
 
     return app
 
