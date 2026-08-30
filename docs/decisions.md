@@ -344,3 +344,15 @@ Unlike Agent Registry's signed cards, the Agent Skills standard has no signing c
 the spec's naming/length rules, not authenticity. **Why:** matches the actual standard being built
 to — inventing a signing scheme the standard doesn't define would stop being "build to standard"
 and start being a platform-specific extension, which is explicitly not this harness's job.
+
+**D-036 — Publish checks the Postgres uniqueness constraint *before* writing to MinIO.** Caught
+during review, before it ever shipped: the first draft uploaded the bundle to its deterministic
+key (`{name}/{version}.zip`) and only *then* inserted the Postgres row, catching a duplicate
+`(name, version)` via `IntegrityError` afterward. A rejected duplicate-publish attempt would still
+have already overwritten whatever bundle a prior, successful publish had stored at that same key —
+the 409 response would be correct, but the previously-good bundle behind it would already be
+gone. **Why:** since the object key is deterministic from `(name, version)`, checking the
+constraint that can already reject the request cheaply (a Postgres insert) before the write that
+can't be transactionally undone (a MinIO PUT) is strictly safer and costs nothing extra on the
+success path — same principle as checking a signature before a write, just for a different
+class of write-ordering hazard.
