@@ -383,3 +383,45 @@ CAN reject unsophisticated malicious uploads, both in code and in prose) — sam
 limits posture as D-031's non-goal on byte-exact JCS canonicalization. `block`-severity findings
 reject the publish outright; `warn`-severity findings (a `shell=True` call, a hardcoded raw-IP
 URL) are a human judgment call, stored and surfaced rather than silently blocking.
+
+---
+
+## 2026-08-30 — Eval Registry harness design (Wave 2, third of three)
+
+Full design: [superpowers/specs/2026-08-30-eval-registry-harness-design.md](superpowers/specs/2026-08-30-eval-registry-harness-design.md).
+Reviewed with the user before building (unlike Agent/Skill Registry, there's no external standard
+here — D-011/D-012 already set the shape, but the schema itself needed a design pass).
+
+**D-039 — Suite cases use DeepEval's `Golden` field names as the canonical schema, and metrics
+are an engine-agnostic `{engine, metric_id, params}` envelope, not any one engine's native
+config.** Researched against current docs: DeepEval, Promptfoo, and Ragas — the three engines
+D-012 names — have three incompatible config postures (Promptfoo has a native serializable suite
+format; DeepEval has serializable data but code-only metrics; Ragas is code-only for both).
+**Why:** storing "a DeepEval config" would need a rewrite to also drive Promptfoo/Ragas suites;
+DeepEval's `Golden` (pre-execution test case — everything except `actual_output`/
+`retrieval_context`/`tools_called`, which only exist after actually running the agent under test)
+is the closest thing to a natural canonical shape among the three, and the metrics envelope keeps
+this registry from having to understand any engine's actual API.
+
+**D-040 — Suites are one of two kinds, `cases` or `redteam`, not one shape stretched to fit
+both.** A `redteam`-kind suite stores a generation config (Promptfoo's `purpose`/`plugins`/
+`strategies`), not a fixed dataset. **Why:** real finding from the Promptfoo research — red-
+teaming generates adversarial inputs at run time; forcing it into the goldens+metrics shape would
+mean either a suite with a fake empty dataset or silently reinterpreting what "dataset" means for
+that one kind.
+
+**D-041 — A judge-rubric prompt-injection scan on publish, reusing Skill Registry's scan module
+(D-038), confirmed after being raised as an open question rather than decided unilaterally.** A
+suite's `metrics[].params.criteria` (an LLM-judge rubric) and `redteam_config.purpose` are prose
+an LLM-judge will read and act on — the same threat class D-038 addressed for `SKILL.md`, just
+aimed at gaming the judge instead of hijacking the agent. **Why:** small reuse of an
+already-built pattern; the user confirmed building it now rather than deferring until the Evals
+runner (Wave 4) exists to be gamed against.
+
+**D-042 — The dataset is not duplicated into Postgres, unlike Skill Registry's `skill_md`.**
+Only `dataset_object_key` (a MinIO pointer) lives in Postgres; the golden set itself is
+MinIO-only. **Why:** `skill_md` is duplicated because it's typically small (the standard
+recommends under 500 lines) and is the primary thing a caller reads on every request; a golden
+set — especially a safety/red-team pack — can be large and isn't read on every list/get call, so
+duplicating it would trade disk space and drift risk for a read-latency win nothing currently
+needs.
