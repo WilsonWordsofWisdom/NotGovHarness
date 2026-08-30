@@ -1,8 +1,10 @@
 # Agent Gateway Harness — Design
 
-**Status:** step 1 (ContextForge compose integration) built and verified live — real login,
-admin-token issuance, and an authenticated `GET /gateways` call all confirmed against the actual
-running container (Postgres-backed, in compose, healthcheck passing). Steps 2-5 not yet built.
+**Status:** built and verified live end to end — all 5 done-when criteria confirmed against the
+actual running stack: a real bearer token from identity-service registers the real
+`mcp-skills-demo` MCP server with a real ContextForge through the `agent-gateway` façade, then
+calls its `list_skills` tool through that same façade and gets back real Skill Registry data.
+Not yet merged to `main`.
 **Date:** 2026-08-31
 **Wave:** 3 (Runtime & Policy) · first
 **Branch:** `feat/wave3-agent-gateway`
@@ -159,3 +161,24 @@ ContextForge / Redis** — single-instance reference deployment, no session affi
 - **Postgres needs the `+psycopg` driver suffix** (`postgresql+psycopg://...`) — plain
   `postgresql://` defaults to `psycopg2`, which isn't installed in the ContextForge image
   (found live: `ModuleNotFoundError: No module named 'psycopg2'`).
+- **SSRF protection blocks registering any gateway on the compose network by default** (found
+  live) — every MCP server in this reference platform genuinely lives on a private/RFC1918-ish
+  Docker network, which is exactly what ContextForge's default SSRF protection exists to block.
+  `SSRF_ALLOW_PRIVATE_NETWORKS=true` is the documented flag for this case (not a blanket bypass —
+  `SSRF_BLOCKED_NETWORKS`/`_HOSTS`, e.g. cloud metadata endpoints, still apply).
+- **`mcp-skills-demo` needed DNS-rebinding protection disabled** (found live: a real request
+  came back `421 Misdirected Request`) — the `mcp` SDK's streamable-HTTP transport validates the
+  incoming `Host` header against an allowlist by default; ContextForge connects via the Docker
+  network's service-name hostname (`mcp-skills-demo:8000`), not `localhost`, which the default
+  allowlist doesn't include. Reasonable trade-off for a service never reached outside the
+  compose-internal network; `TransportSecuritySettings(enable_dns_rebinding_protection=False)`.
+- **ContextForge federates a tool under `{gateway_slug}-{tool_name}`, not the tool's own bare
+  name** (found live: calling `/tools/list_skills/call` 404s with "Tool not found"; the actual
+  callable name from `GET /tools` was `mcp-skills-demo-list-skills`). A caller of the façade has
+  to use the federated name, not assume it matches whatever the MCP server itself calls the tool.
+- **A ContextForge session can be invalidated (e.g. by its own restart) before the façade's
+  client-side expiry clock would think to refresh it** (found live, D-046) — the façade's cached
+  token kept getting rejected with 401 after ContextForge was rebuilt, even though nothing in the
+  façade's own `expires_in`-based timer said it should be stale. Fixed with a retry-once-on-401
+  in `ContextForgeClient._request`, re-logging in and retrying rather than surfacing a spurious
+  auth failure to the façade's own caller for something that isn't their fault.

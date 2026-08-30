@@ -30,10 +30,7 @@ class ContextForgeClient:
         self._token: str | None = None
         self._token_expires_at: float = 0.0
 
-    async def _ensure_token(self, client: httpx.AsyncClient) -> str:
-        # 30s safety margin so a token doesn't expire mid-request.
-        if self._token is not None and time.monotonic() < self._token_expires_at - 30:
-            return self._token
+    async def _login(self, client: httpx.AsyncClient) -> str:
         resp = await client.post(
             "/auth/email/login",
             json={"email": self._admin_email, "password": self._admin_password},
@@ -45,12 +42,27 @@ class ContextForgeClient:
         self._token_expires_at = time.monotonic() + body.get("expires_in", 1200)
         return token
 
+    async def _ensure_token(self, client: httpx.AsyncClient) -> str:
+        # 30s safety margin so a token doesn't expire mid-request.
+        if self._token is not None and time.monotonic() < self._token_expires_at - 30:
+            return self._token
+        return await self._login(client)
+
     async def _request(self, method: str, path: str, **kwargs: Any) -> httpx.Response:
         async with httpx.AsyncClient(base_url=self._base_url, timeout=10.0) as client:
             token = await self._ensure_token(client)
             resp = await client.request(
                 method, path, headers={"Authorization": f"Bearer {token}"}, **kwargs
             )
+            if resp.status_code == 401:
+                # ContextForge can invalidate a still-unexpired-by-our-clock token (e.g. a
+                # restart invalidating its own session state — found live, D-046) — one retry
+                # with a freshly-issued token before giving up, rather than surfacing a spurious
+                # auth failure to the façade's own caller for something that isn't their fault.
+                token = await self._login(client)
+                resp = await client.request(
+                    method, path, headers={"Authorization": f"Bearer {token}"}, **kwargs
+                )
         if resp.status_code >= 400:
             raise ContextForgeError(resp.status_code, resp.text)
         return resp

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import httpx
 from mcp.server.mcpserver import MCPServer
+from mcp.server.transport_security import TransportSecuritySettings
 
 from platform_core.config import PlatformSettings
 
@@ -32,4 +33,13 @@ async def list_skills() -> list[dict]:
         return resp.json()
 
 
-app = server.streamable_http_app()
+# DNS-rebinding protection validates the incoming Host header against an allowlist — this
+# server is only ever reached over the compose-internal Docker network (never the public
+# internet, not even fronted by Traefik), and ContextForge connects via the Docker network's
+# service-name hostname (e.g. "mcp-skills-demo:8000"), not "localhost" — found live (a real
+# request came back 421 Misdirected Request until this was disabled). Disabling is a reasonable
+# trade-off for a reference-platform-internal demo service; a real deployment would allowlist
+# the real hostname instead.
+app = server.streamable_http_app(
+    transport_security=TransportSecuritySettings(enable_dns_rebinding_protection=False)
+)

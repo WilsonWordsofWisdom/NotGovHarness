@@ -467,3 +467,27 @@ password" gate on first login. (3) `DATABASE_URL` needs the `+psycopg` driver su
 three were verified by actually running the container and hitting real endpoints (`docker run`
 trials before ever touching compose), not assumed from docs — same discipline as D-032's
 self-deadlock and every other "found live" entry in this log.
+
+**D-046 — ContextForgeClient retries once on a 401, re-logging in, rather than trusting its own
+expiry clock alone.** Found live: rebuilding the ContextForge container invalidated the façade's
+still-cached, not-yet-expired-by-`expires_in` token, and every subsequent call kept failing with
+a spurious "Invalid authentication credentials" until the façade itself was restarted. **Why:**
+the façade's cache assumed the only way a token goes bad is time — ContextForge's own session
+state can invalidate one for other reasons (a restart, in this case) that the client has no way
+to predict in advance. A single retry-with-fresh-login on 401 handles that class of failure
+without a caller of the façade ever seeing it, at the cost of one extra login call only on the
+(rare) occasion the cache was already wrong.
+
+**D-047 — SSRF protection and DNS-rebinding protection both needed explicit, documented
+loosening for this reference deployment — not disabled, targeted.** ContextForge's default SSRF
+protection blocks registering any gateway whose URL resolves to a private network address; every
+MCP server in this platform genuinely lives on the compose-internal Docker network, which is
+exactly what that protection exists to catch. `SSRF_ALLOW_PRIVATE_NETWORKS=true` allows it while
+leaving `SSRF_BLOCKED_NETWORKS`/`_HOSTS` (cloud metadata endpoints, etc.) still enforced.
+Separately, `mcp-skills-demo`'s own DNS-rebinding `Host`-header allowlist rejected ContextForge's
+Docker-network hostname (`mcp-skills-demo:8000` isn't `localhost`) with a real `421`; disabled
+via `TransportSecuritySettings(enable_dns_rebinding_protection=False)` since this server is never
+reached outside that network. **Why worth a decision entry, not just a risk note:** both are real
+security features being *narrowed for a documented, understood reason* (the reference platform's
+actual network topology), not blanket-disabled — the distinction matters if this pattern is ever
+copied into a less-contained deployment.
