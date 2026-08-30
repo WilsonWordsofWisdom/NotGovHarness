@@ -2047,12 +2047,14 @@ version = "0.1.0"
 source = { editable = "services/skill-registry" }
 dependencies = [
     { name = "platform-core" },
+    { name = "python-multipart" },
     { name = "pyyaml" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "platform-core", editable = "packages/platform-core" },
+    { name = "python-multipart", specifier = ">=0.0.9" },
     { name = "pyyaml", specifier = ">=6.0" },
 ]
 

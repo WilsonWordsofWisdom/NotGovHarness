@@ -3,7 +3,7 @@ name = "skill-registry"
 version = "0.1.0"
 description = "A NotGovHarness service."
 requires-python = ">=3.12"
-dependencies = ["platform-core", "pyyaml>=6.0"]
+dependencies = ["platform-core", "pyyaml>=6.0", "python-multipart>=0.0.9"]
 
 [build-system]
 requires = ["hatchling"]
