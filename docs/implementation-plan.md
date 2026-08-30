@@ -47,7 +47,9 @@ dependencies. Phase 0 is the concrete gate before any harness is built.
 - **Skill Registry** — built and verified end to end (all 6 done-when criteria confirmed live: a
   real zip bundle published through a running identity-service + skill-registry was fetched back
   byte-for-byte, both parsed metadata and the raw archive download, and every rejection path
-  returned a clear 422). Not yet merged to `main`. See
+  returned a clear 422). Also gained a malicious-content scan on publish (D-038, scans `SKILL.md`
+  prose too, not just bundled scripts) and a self-hosted browse/publish web UI at `/ui` (D-037:
+  takes a bearer token, never a client secret). **Merged to `main`.** See
   [superpowers/specs/2026-08-30-skill-registry-harness-design.md](superpowers/specs/2026-08-30-skill-registry-harness-design.md)
   and decisions D-033..D-036 — also added `platform_core.objectstore` (a shared MinIO wrapper,
   D-034), reused by Eval Registry next.

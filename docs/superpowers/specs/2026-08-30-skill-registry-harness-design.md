@@ -4,7 +4,8 @@
 signed by nothing (the standard has no signing concept) but scope-gated, was published through a
 running identity-service + skill-registry, fetched back byte-for-byte (metadata and the raw
 archive download), and every rejection path (bad name pattern, path-traversal entry) returned a
-clear 422, not a 500. Not yet merged to `main`.
+clear 422, not a 500. **Merged to `main`**, including the post-build malicious-content scan and
+browse/publish UI addendum below.
 **Date:** 2026-08-30
 **Wave:** 2 (Catalog & Registries) · second of three
 **Branch:** `feat/wave2-skill-registry`
