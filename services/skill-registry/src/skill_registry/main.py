@@ -11,7 +11,8 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any
 
-from fastapi import Depends, FastAPI, Form, UploadFile
+from fastapi import Depends, FastAPI, Form, Response, UploadFile
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -19,7 +20,7 @@ from platform_core.app import create_app
 from platform_core.auth import CallerIdentity, make_require_identity, require_scope
 from platform_core.db import Database, lifespan_hook, session_dependency
 from platform_core.errors import PlatformError
-from platform_core.objectstore import ObjectStore
+from platform_core.objectstore import ObjectNotFoundError, ObjectStore
 
 from .bundle import BundleError, extract_skill_md
 from .config import Settings
@@ -110,6 +111,96 @@ def build_app() -> FastAPI:
             "published_by": row.published_by,
             "created_at": row.created_at.isoformat(),
         }
+
+    @app.get("/skills", tags=["skill-registry"])
+    async def list_skills(
+        q: str | None = None, session: AsyncSession = Depends(get_session)
+    ) -> list[dict[str, Any]]:
+        # Discovery stage (progressive disclosure): name + description only, matching what an
+        # agent loads at startup for every available skill — full instructions come later, at
+        # GET /skills/{name}.
+        # Ordered by created_at within each name, so the last row seen per name is the same
+        # "latest" GET /skills/{name} would return — not alphabetically-last version string.
+        rows = (
+            await session.execute(select(Skill).order_by(Skill.name, Skill.created_at))
+        ).scalars()
+        seen: dict[str, str] = {}
+        for row in rows:
+            if q and q.lower() not in row.name.lower() and q.lower() not in row.description.lower():
+                continue
+            seen[row.name] = row.description
+        return [{"name": name, "description": description} for name, description in seen.items()]
+
+    async def _latest(session: AsyncSession, name: str) -> Skill:
+        row = (
+            await session.execute(
+                select(Skill).where(Skill.name == name).order_by(Skill.created_at.desc()).limit(1)
+            )
+        ).scalar_one_or_none()
+        if row is None:
+            raise PlatformError("not_found", f"no skill published for {name!r}", status_code=404)
+        return row
+
+    async def _version(session: AsyncSession, name: str, version: str) -> Skill:
+        row = (
+            await session.execute(select(Skill).where(Skill.name == name, Skill.version == version))
+        ).scalar_one_or_none()
+        if row is None:
+            raise PlatformError(
+                "not_found",
+                f"no skill published for {name!r} version {version!r}",
+                status_code=404,
+            )
+        return row
+
+    def _skill_out(row: Skill) -> dict[str, Any]:
+        # Activation stage: the full frontmatter + SKILL.md body an agent loads once it decides
+        # this skill is relevant.
+        return {
+            "id": row.id,
+            "name": row.name,
+            "version": row.version,
+            "description": row.description,
+            "license": row.license,
+            "compatibility": row.compatibility,
+            "metadata": row.metadata_,
+            "allowed_tools": row.allowed_tools,
+            "skill_md": row.skill_md,
+            "bundle_size_bytes": row.bundle_size_bytes,
+            "published_by": row.published_by,
+            "created_at": row.created_at.isoformat(),
+        }
+
+    @app.get("/skills/{name}", tags=["skill-registry"])
+    async def get_latest_skill(
+        name: str, session: AsyncSession = Depends(get_session)
+    ) -> dict[str, Any]:
+        return _skill_out(await _latest(session, name))
+
+    @app.get("/skills/{name}/{version}", tags=["skill-registry"])
+    async def get_skill_version(
+        name: str, version: str, session: AsyncSession = Depends(get_session)
+    ) -> dict[str, Any]:
+        return _skill_out(await _version(session, name, version))
+
+    @app.get("/skills/{name}/{version}/bundle", tags=["skill-registry"])
+    async def download_bundle(
+        name: str, version: str, session: AsyncSession = Depends(get_session)
+    ) -> Response:
+        # Execution stage: the full archive (scripts/references/assets), fetched only once the
+        # agent actually needs a bundled file — not loaded at Discovery or Activation.
+        row = await _version(session, name, version)
+        try:
+            data = await store.get_object(row.bundle_object_key)
+        except ObjectNotFoundError as exc:
+            raise PlatformError(
+                "bundle_missing", f"stored bundle object is missing: {exc}", status_code=500
+            ) from exc
+        return Response(
+            content=data,
+            media_type="application/zip",
+            headers={"Content-Disposition": f'attachment; filename="{name}-{version}.zip"'},
+        )
 
     return app
 
