@@ -1,0 +1,7 @@
+from __future__ import annotations
+
+from platform_core.config import PlatformSettings
+
+
+class Settings(PlatformSettings):
+    service_name: str = "eval-registry"

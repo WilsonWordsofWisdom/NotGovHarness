@@ -1,0 +1,16 @@
+[project]
+name = "eval-registry"
+version = "0.1.0"
+description = "A NotGovHarness service."
+requires-python = ">=3.12"
+dependencies = ["platform-core"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/eval_registry"]
+
+[tool.uv.sources]
+platform-core = { workspace = true }
