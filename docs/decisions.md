@@ -316,3 +316,31 @@ hop) sidesteps the problem entirely rather than working around it — identity-s
 `signing_key` in-process, so self-verification never needed HTTP in the first place. Every
 *downstream* consumer of identity-service's JWKS (`agent-registry`, `upstream-stub`) is unaffected
 — they're verifying someone else's token/signature, not deadlocking against themselves.
+
+---
+
+## 2026-08-30 — Skill Registry harness design (Wave 2, second of three)
+
+Full design: [superpowers/specs/2026-08-30-skill-registry-harness-design.md](superpowers/specs/2026-08-30-skill-registry-harness-design.md).
+
+**D-033 — `version` is a registry-level addition, not smuggled into `SKILL.md`.** The Agent
+Skills spec's frontmatter has no `version` field (its own example puts one inside the free-form
+`metadata` map as an arbitrary key, not a first-class field). This harness requires an explicit
+`version` string alongside the upload, kept separate from the parsed frontmatter, for
+`(name, version)` uniqueness — the same shape Agent Registry already uses. **Why:** stamping a
+non-standard field into stored `SKILL.md` content, or overloading `metadata.version`, would make
+this registry's copy diverge from what a client actually uploaded; keeping it as a distinct
+registry column preserves `skill_md` as the exact byte-for-byte source an agent loads.
+
+**D-034 — `platform_core.objectstore` (MinIO wrapper) is built now, in `platform-core`, not
+inline in `skill-registry`.** A minimal `ensure_bucket`/`put_object`/`get_object` wrapper, same
+shape as `platform_core.db.Database`. **Why:** Eval Registry — the next and last Wave 2 harness —
+also needs MinIO per the decisions table; this is the named next consumer, not speculative reuse,
+so sharing it now avoids writing the same MinIO boilerplate twice in two consecutive harnesses.
+
+**D-035 — Skill bundles get no cryptographic integrity check; validation is structural only.**
+Unlike Agent Registry's signed cards, the Agent Skills standard has no signing concept.
+`skill_registry:publish` scope-gating is the only trust boundary; frontmatter validation checks
+the spec's naming/length rules, not authenticity. **Why:** matches the actual standard being built
+to — inventing a signing scheme the standard doesn't define would stop being "build to standard"
+and start being a platform-specific extension, which is explicitly not this harness's job.
