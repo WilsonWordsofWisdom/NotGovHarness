@@ -36,6 +36,8 @@ LANGFUSE_AUTH = (
 IDENTITY_URL = os.getenv("PLATFORM_TEST_IDENTITY_URL", "http://localhost:8090")
 AUDIT_URL = os.getenv("PLATFORM_TEST_AUDIT_URL", "http://localhost:8091")
 AGENT_REGISTRY_URL = os.getenv("PLATFORM_TEST_AGENT_REGISTRY_URL", "http://localhost:8092")
+SKILL_REGISTRY_URL = os.getenv("PLATFORM_TEST_SKILL_REGISTRY_URL", "http://localhost:8093")
+MINIO_ENDPOINT = os.getenv("PLATFORM_TEST_MINIO_ENDPOINT", "localhost:9090")
 
 
 def _reachable(host: str, port: int, timeout: float = 1.0) -> bool:
@@ -185,3 +187,28 @@ def platform_agent_registry_url() -> str:
             "docker compose --profile core --profile identity --profile registry up -d)"
         )
     return AGENT_REGISTRY_URL
+
+
+@pytest.fixture
+def platform_skill_registry_url() -> str:
+    host, _, port = SKILL_REGISTRY_URL.replace("http://", "").replace("https://", "").partition(":")
+    if not _reachable(host or "localhost", int(port or "8093")):
+        pytest.skip(
+            "skill-registry not reachable on "
+            f"{SKILL_REGISTRY_URL} (start the stack: "
+            "docker compose --profile core --profile identity --profile registry "
+            "--profile objectstore up -d)"
+        )
+    return SKILL_REGISTRY_URL
+
+
+@pytest.fixture
+def platform_minio_endpoint() -> str:
+    host, _, port = MINIO_ENDPOINT.partition(":")
+    if not _reachable(host or "localhost", int(port or "9090")):
+        pytest.skip(
+            "MinIO not reachable on "
+            f"{MINIO_ENDPOINT} (start the stack: "
+            "docker compose --profile core --profile objectstore up -d)"
+        )
+    return MINIO_ENDPOINT

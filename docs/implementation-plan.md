@@ -44,11 +44,18 @@ dependencies. Phase 0 is the concrete gate before any harness is built.
   and decisions D-029..D-032 — D-032 in particular: the first design for `/cards/sign`'s auth hit
   a real self-deadlock (a single-worker server making a synchronous HTTP call to itself), fixed
   live by switching to identity-service's existing in-process `verify_own_token`.
+- **Skill Registry** — built and verified end to end (all 6 done-when criteria confirmed live: a
+  real zip bundle published through a running identity-service + skill-registry was fetched back
+  byte-for-byte, both parsed metadata and the raw archive download, and every rejection path
+  returned a clear 422). Not yet merged to `main`. See
+  [superpowers/specs/2026-08-30-skill-registry-harness-design.md](superpowers/specs/2026-08-30-skill-registry-harness-design.md)
+  and decisions D-033..D-036 — also added `platform_core.objectstore` (a shared MinIO wrapper,
+  D-034), reused by Eval Registry next.
 - LLM Gateway (Wave 1) is paused by explicit choice: GovTech Platform AI was chosen as the
   provider, but the API key/base URL/auth details haven't been provided yet, and the key must
   never be committed to GitHub (local `.env` only, `${VAR}` substitution). Building Wave 2's
   registries (Identity-dependent, not LLM-Gateway-dependent) doesn't block on this.
-- Remaining Wave 2 harnesses: Skill Registry, Eval Registry.
+- Remaining Wave 2 harness: Eval Registry.
 
 | Area | State |
 |---|---|

@@ -14,3 +14,5 @@ CREATE DATABASE agent_registry OWNER platform;
 -- Separate from `agent_registry`, same reasoning as `audit_test`: this service's tests wipe the
 -- table between runs for isolation, which must never touch a database anything real writes to.
 CREATE DATABASE agent_registry_test OWNER platform;
+CREATE DATABASE skill_registry OWNER platform;
+CREATE DATABASE skill_registry_test OWNER platform;
