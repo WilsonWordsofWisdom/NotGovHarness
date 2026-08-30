@@ -8,6 +8,8 @@ against the app's own signing key, same technique test_oauth_endpoint.py uses.
 
 from __future__ import annotations
 
+import time
+
 import jwt
 from fastapi.testclient import TestClient
 from identity_service.config import Settings
@@ -58,4 +60,25 @@ def test_sign_card_without_a_token_is_unauthorized():
 
 def test_sign_card_with_a_garbage_token_is_unauthorized():
     resp = client.post("/cards/sign", json=CARD, headers={"Authorization": "Bearer not-a-real-jwt"})
+    assert resp.status_code == 401
+
+
+def test_sign_card_with_an_expired_token_is_unauthorized():
+    signing_key = app.state.signing_key
+    now = int(time.time())
+    expired = jwt.encode(
+        {
+            "iss": settings.oauth2_issuer,
+            "aud": settings.oauth2_audience,
+            "iat": now - 600,
+            "exp": now - 300,
+            "sub": "example-service",
+            "scope": "agentcard:sign",
+            "mode": "autonomous",
+        },
+        signing_key.private_pem,
+        algorithm="RS256",
+        headers={"kid": signing_key.kid},
+    )
+    resp = client.post("/cards/sign", json=CARD, headers={"Authorization": f"Bearer {expired}"})
     assert resp.status_code == 401

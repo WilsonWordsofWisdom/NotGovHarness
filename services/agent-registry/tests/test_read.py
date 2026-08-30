@@ -169,6 +169,50 @@ def test_get_unknown_agent_is_404(app):
     assert resp.status_code == 404
 
 
+def test_list_handles_a_card_with_no_skills_field(app, private_pem):
+    # "skills" is optional per the A2A spec (Non-goals) — list_agents must not blow up on a
+    # card that omits it entirely, not just one with an empty list.
+    card = {
+        "name": "skill-less-agent",
+        "url": "http://skill-less-agent:8000",
+        "version": "1.0.0",
+        "capabilities": {"streaming": False},
+    }
+    with TestClient(app) as client:
+        _publish(client, private_pem, card)
+        listing = client.get("/agents").json()
+    assert [row["skills"] for row in listing if row["name"] == "skill-less-agent"] == [[]]
+
+
+def test_verify_with_a_signing_key_the_jwks_no_longer_has_reports_invalid(app, private_pem):
+    # Simulates a rotated/unknown kid — e.g. identity-service restarted with a fresh ephemeral
+    # key (dev posture, see identity-service's keys.py) after this card was signed.
+    from agent_registry.models import AgentCard
+
+    from platform_core.db import Database
+
+    with TestClient(app) as client:
+        _publish(client, private_pem, _card("widget-agent", "1.0.0"))
+
+        async def _rotate_kid() -> None:
+            db = Database(AGENT_REGISTRY_TEST_DB_URL)
+            async with db.session() as session:
+                await session.execute(
+                    update(AgentCard)
+                    .where(AgentCard.name == "widget-agent", AgentCard.version == "1.0.0")
+                    .values(signing_key_id="no-such-kid")
+                )
+                await session.commit()
+            await db.dispose()
+
+        asyncio.run(_rotate_kid())
+
+        resp = client.get("/agents/widget-agent/1.0.0/verify")
+    body = resp.json()
+    assert body["valid"] is False
+    assert "unknown signing key" in body["reason"]
+
+
 def test_verify_on_intact_card_is_valid(app, private_pem):
     with TestClient(app) as client:
         _publish(client, private_pem, _card("widget-agent", "1.0.0"))
