@@ -27,6 +27,10 @@ class RegisterServerIn(BaseModel):
     transport: str = "SSE"
 
 
+class CallToolIn(BaseModel):
+    arguments: dict[str, Any] = {}
+
+
 def build_app() -> FastAPI:
     settings = Settings()
     require_identity = make_require_identity(settings)
@@ -54,6 +58,24 @@ def build_app() -> FastAPI:
     ) -> list[dict[str, Any]]:
         try:
             return await cf.list_gateways()
+        except ContextForgeError as exc:
+            raise PlatformError("contextforge_error", exc.detail, status_code=502) from exc
+
+    @app.get("/tools", tags=["agent-gateway"])
+    async def list_tools(
+        _identity: CallerIdentity = Depends(require_call_scope),
+    ) -> list[dict[str, Any]]:
+        try:
+            return await cf.list_tools()
+        except ContextForgeError as exc:
+            raise PlatformError("contextforge_error", exc.detail, status_code=502) from exc
+
+    @app.post("/tools/{name}/call", tags=["agent-gateway"])
+    async def call_tool(
+        name: str, body: CallToolIn, _identity: CallerIdentity = Depends(require_call_scope)
+    ) -> dict[str, Any]:
+        try:
+            return await cf.call_tool(name, body.arguments)
         except ContextForgeError as exc:
             raise PlatformError("contextforge_error", exc.detail, status_code=502) from exc
 
