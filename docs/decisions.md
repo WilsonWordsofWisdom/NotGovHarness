@@ -425,3 +425,32 @@ recommends under 500 lines) and is the primary thing a caller reads on every req
 set — especially a safety/red-team pack — can be large and isn't read on every list/get call, so
 duplicating it would trade disk space and drift risk for a read-latency win nothing currently
 needs.
+
+---
+
+## 2026-08-31 — Agent Gateway harness design (Wave 3, first)
+
+Full design: [superpowers/specs/2026-08-31-agent-gateway-harness-design.md](superpowers/specs/2026-08-31-agent-gateway-harness-design.md).
+Reviewed with the user before building.
+
+**D-043 — `agent-gateway` is a façade in front of ContextForge; ContextForge does not validate
+identity-service's tokens directly.** Researched against the real `IBM/mcp-context-forge` repo:
+ContextForge *can* trust an external OAuth2 issuer (`SSO_API_TOKEN_AUTH_ENABLED` +
+`trusted_for_api_auth`), but only via registering it as a full "Generic OIDC provider," which
+needs a working `authorization_url` (browser-redirect login) — identity-service only implements
+`client_credentials` + RFC 8693 token-exchange, no authorization-code flow. **Why:** building an
+authorization-code endpoint solely to satisfy ContextForge's provider-registration model, for a
+login flow nothing would ever use, is real unforced work for an opt-in ContextForge feature with
+at least one documented rough edge. The standard façade pattern (architecture.md already names
+ContextForge as a façade example) does the same job with a pattern this platform has already
+proven three times: our identity-service gates callers, the upstream tool's native credential
+(here, ContextForge's bootstrap admin login) stays a backend-only secret the façade holds —
+same shape as Langfuse's API key pair in the Observability harness.
+
+**D-044 — `mcp-skills-demo`, a small new MCP server wrapping Skill Registry, exists so this
+harness has something real to federate and call through.** Without it, "done" would mean
+"ContextForge's container started," not "the routing mechanism actually works end to end."
+**Why:** matches this platform's established preference for proving mechanisms against real,
+already-built harnesses rather than mocks or isolated demos (Audit's live tampering test,
+Agent/Skill/Eval Registry's live-stack tests) — and it's the same role `upstream-stub` already
+plays for the Phase 0 façade demo, just for MCP instead of plain REST.
