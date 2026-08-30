@@ -3,7 +3,7 @@
 **Status:** built and verified — all 6 done-when criteria confirmed live: a real signed Agent
 Card, signed by a running identity-service and published to a running agent-registry, was fetched
 back byte-for-byte, and a card tampered with directly in Postgres (bypassing every service) was
-caught by `/verify` at exactly that row. Not yet merged to `main`.
+caught by `/verify` at exactly that row. **Merged to `main`.**
 **Date:** 2026-08-30
 **Wave:** 2 (Catalog & Registries) · first of three
 **Branch:** `feat/wave2-agent-registry`

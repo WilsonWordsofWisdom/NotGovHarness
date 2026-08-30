@@ -39,7 +39,7 @@ dependencies. Phase 0 is the concrete gate before any harness is built.
 - **Agent Registry** — built and verified end to end (all 6 done-when criteria confirmed live: a
   real Agent Card, signed by a running identity-service's `POST /cards/sign` and published to a
   running agent-registry, was fetched back byte-for-byte, and a card tampered with directly in
-  Postgres was caught by `/verify`). Not yet merged to `main`. See
+  Postgres was caught by `/verify`). **Merged to `main`.** See
   [superpowers/specs/2026-08-30-agent-registry-harness-design.md](superpowers/specs/2026-08-30-agent-registry-harness-design.md)
   and decisions D-029..D-032 — D-032 in particular: the first design for `/cards/sign`'s auth hit
   a real self-deadlock (a single-worker server making a synchronous HTTP call to itself), fixed
