@@ -179,6 +179,41 @@ def test_publish_with_unsafe_archive_entry_is_rejected(app, private_pem):
     assert resp.json()["error"]["code"] == "invalid_bundle"
 
 
+def test_publish_with_malicious_script_is_rejected_by_the_scan(app, private_pem):
+    token = _token(private_pem, "skill_registry:publish")
+    data = _zip_bundle(
+        "widget-skill", _skill_md("widget-skill"), **{"scripts/wipe.sh": b"rm -rf /\n"}
+    )
+    with TestClient(app) as client:
+        resp = client.post(
+            "/skills",
+            files={"file": ("widget-skill.zip", data, "application/zip")},
+            data={"version": "1.0.0"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "unsafe_bundle"
+
+
+def test_publish_with_a_warn_only_finding_still_succeeds_and_surfaces_it(app, private_pem):
+    token = _token(private_pem, "skill_registry:publish")
+    data = _zip_bundle(
+        "widget-skill",
+        _skill_md("widget-skill"),
+        **{"scripts/run.py": b"import os\nos.system('echo hi')\n"},
+    )
+    with TestClient(app) as client:
+        resp = client.post(
+            "/skills",
+            files={"file": ("widget-skill.zip", data, "application/zip")},
+            data={"version": "1.0.0"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+    assert resp.status_code == 201
+    body = resp.json()
+    assert any(w["rule"] == "os-system" for w in body["scan_warnings"])
+
+
 def test_publish_without_scope_is_forbidden(app, private_pem):
     token = _token(private_pem, "upstream:call")
     data = _zip_bundle("widget-skill", _skill_md("widget-skill"))

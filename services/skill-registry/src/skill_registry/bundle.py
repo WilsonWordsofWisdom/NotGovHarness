@@ -25,11 +25,13 @@ class BundleError(Exception):
 class ExtractedBundle:
     directory_name: str
     skill_md_content: str
+    files: dict[str, bytes]  # path relative to the skill directory -> content, incl. SKILL.md
 
 
-def extract_skill_md(data: bytes) -> ExtractedBundle:
+def extract_bundle(data: bytes) -> ExtractedBundle:
     """Raises ``BundleError`` unless ``data`` is a safe zip archive of a single skill directory
-    containing ``<directory>/SKILL.md``.
+    containing ``<directory>/SKILL.md``. Returns every file's content (relative to the skill
+    directory, leading prefix stripped) — used for both storage and the malicious-content scan.
     """
     if len(data) > MAX_BUNDLE_BYTES:
         raise BundleError(f"bundle exceeds max upload size of {MAX_BUNDLE_BYTES} bytes")
@@ -45,7 +47,7 @@ def extract_skill_md(data: bytes) -> ExtractedBundle:
 
     total_uncompressed = 0
     top_level_dirs: set[str] = set()
-    skill_md_info: zipfile.ZipInfo | None = None
+    files: dict[str, bytes] = {}
 
     for info in infos:
         name = info.filename
@@ -59,16 +61,26 @@ def extract_skill_md(data: bytes) -> ExtractedBundle:
         parts = name.split("/")
         if parts[0]:
             top_level_dirs.add(parts[0])
-        if len(parts) == 2 and parts[1] == "SKILL.md":
-            skill_md_info = info
+
+        if info.is_dir() or len(parts) < 2:
+            continue
+        relative = "/".join(parts[1:])
+        if relative:
+            files[relative] = archive.read(info)
 
     if len(top_level_dirs) != 1:
         raise BundleError(
             f"bundle must contain exactly one top-level directory (found {sorted(top_level_dirs)})"
         )
-    if skill_md_info is None:
+    if "SKILL.md" not in files:
         raise BundleError("bundle must contain <directory>/SKILL.md")
 
     directory_name = next(iter(top_level_dirs))
-    skill_md_content = archive.read(skill_md_info).decode("utf-8")
-    return ExtractedBundle(directory_name=directory_name, skill_md_content=skill_md_content)
+    try:
+        skill_md_content = files["SKILL.md"].decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise BundleError(f"SKILL.md is not valid UTF-8: {exc}") from exc
+
+    return ExtractedBundle(
+        directory_name=directory_name, skill_md_content=skill_md_content, files=files
+    )

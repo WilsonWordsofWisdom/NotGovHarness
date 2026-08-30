@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Any
 
 from sqlalchemy import DateTime, String, Text, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import JSONB
@@ -32,6 +33,9 @@ class Skill(Base):
     skill_md: Mapped[str] = mapped_column(Text, nullable=False)
     bundle_object_key: Mapped[str] = mapped_column(String(500), nullable=False)
     bundle_size_bytes: Mapped[int] = mapped_column(nullable=False)
+    # Advisory (non-blocking) findings from the malicious-content scan at publish time — a
+    # skill that failed a "block"-severity check never reaches storage at all. See scan.py.
+    scan_findings: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False)
     published_by: Mapped[str] = mapped_column(String(200), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

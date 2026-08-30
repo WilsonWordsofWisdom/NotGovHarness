@@ -22,9 +22,10 @@ from platform_core.db import Database, lifespan_hook, session_dependency
 from platform_core.errors import PlatformError
 from platform_core.objectstore import ObjectNotFoundError, ObjectStore
 
-from .bundle import BundleError, extract_skill_md
+from .bundle import BundleError, extract_bundle
 from .config import Settings
 from .models import Skill
+from .scan import scan_bundle
 from .skillmd import SkillValidationError, parse_skill_md
 
 
@@ -65,7 +66,7 @@ def build_app() -> FastAPI:
 
         data = await file.read()
         try:
-            extracted = extract_skill_md(data)
+            extracted = extract_bundle(data)
         except BundleError as exc:
             raise PlatformError("invalid_bundle", exc.reason, status_code=422) from exc
 
@@ -75,6 +76,21 @@ def build_app() -> FastAPI:
             )
         except SkillValidationError as exc:
             raise PlatformError("invalid_skill", exc.reason, status_code=422) from exc
+
+        scan_result = scan_bundle(extracted.files)
+        block_findings = [f for f in scan_result.findings if f.severity == "block"]
+        if block_findings:
+            raise PlatformError(
+                "unsafe_bundle",
+                "bundle failed the malicious-content scan: "
+                + "; ".join(f"{f.file}: {f.detail} ({f.rule})" for f in block_findings),
+                status_code=422,
+            )
+        warn_findings = [
+            {"file": f.file, "rule": f.rule, "detail": f.detail}
+            for f in scan_result.findings
+            if f.severity == "warn"
+        ]
 
         object_key = f"{parsed.name}/{version}.zip"
         # Postgres uniqueness check *before* the MinIO write: a rejected duplicate publish must
@@ -90,6 +106,7 @@ def build_app() -> FastAPI:
             skill_md=parsed.raw,
             bundle_object_key=object_key,
             bundle_size_bytes=len(data),
+            scan_findings=warn_findings,
             published_by=identity.id,
         )
         session.add(row)
@@ -110,6 +127,7 @@ def build_app() -> FastAPI:
             "version": row.version,
             "published_by": row.published_by,
             "created_at": row.created_at.isoformat(),
+            "scan_warnings": warn_findings,
         }
 
     @app.get("/skills", tags=["skill-registry"])
@@ -167,6 +185,7 @@ def build_app() -> FastAPI:
             "allowed_tools": row.allowed_tools,
             "skill_md": row.skill_md,
             "bundle_size_bytes": row.bundle_size_bytes,
+            "scan_findings": row.scan_findings,
             "published_by": row.published_by,
             "created_at": row.created_at.isoformat(),
         }
