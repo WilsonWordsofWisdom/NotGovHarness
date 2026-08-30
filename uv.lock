@@ -770,10 +770,14 @@ version = "0.1.0"
 source = { editable = "services/eval-registry" }
 dependencies = [
     { name = "platform-core" },
+    { name = "python-multipart" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "platform-core", editable = "packages/platform-core" }]
+requires-dist = [
+    { name = "platform-core", editable = "packages/platform-core" },
+    { name = "python-multipart", specifier = ">=0.0.9" },
+]
 
 [[package]]
 name = "example-service"

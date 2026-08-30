@@ -8,21 +8,33 @@ that's the not-yet-built Evals runner (Wave 4); this harness only stores and ser
 
 from __future__ import annotations
 
+import json
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from typing import Any
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI, Form, UploadFile
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from platform_core.app import create_app
-from platform_core.db import Database, lifespan_hook
+from platform_core.auth import CallerIdentity, make_require_identity, require_scope
+from platform_core.db import Database, lifespan_hook, session_dependency
+from platform_core.errors import PlatformError
 from platform_core.objectstore import ObjectStore
 
 from .config import Settings
+from .models import Suite
+from .scan import scan_suite
+from .suite import SuiteValidationError, parse_goldens, parse_suite_metadata
 
 
 def build_app() -> FastAPI:
     settings = Settings()
     db = Database(settings.database_url)
+    get_session = session_dependency(db)
+    require_identity = make_require_identity(settings)
+    require_publish_scope = require_scope(require_identity, "eval_registry:publish")
     store = ObjectStore(
         settings.minio_endpoint,
         settings.minio_access_key,
@@ -41,6 +53,107 @@ def build_app() -> FastAPI:
         readiness_checks=[db.check],
         lifespan_hooks=[lifespan_hook(db), ensure_bucket_hook],
     )
+
+    @app.post("/suites", tags=["eval-registry"], status_code=201)
+    async def publish_suite(
+        metadata: str = Form(...),
+        dataset: UploadFile | None = None,
+        identity: CallerIdentity = Depends(require_publish_scope),
+        session: AsyncSession = Depends(get_session),
+    ) -> dict[str, Any]:
+        try:
+            raw_metadata = json.loads(metadata)
+        except json.JSONDecodeError as exc:
+            raise PlatformError(
+                "invalid_request", f"'metadata' is not valid JSON: {exc}", status_code=422
+            ) from exc
+        if not isinstance(raw_metadata, dict):
+            raise PlatformError(
+                "invalid_request", "'metadata' must be a JSON object", status_code=422
+            )
+
+        try:
+            parsed = parse_suite_metadata(raw_metadata)
+        except SuiteValidationError as exc:
+            raise PlatformError("invalid_suite", exc.reason, status_code=422) from exc
+
+        scan_result = scan_suite(parsed)
+        block_findings = [f for f in scan_result.findings if f.severity == "block"]
+        if block_findings:
+            raise PlatformError(
+                "unsafe_suite",
+                "suite failed the judge-rubric scan: "
+                + "; ".join(f"{f.label}: {f.detail} ({f.rule})" for f in block_findings),
+                status_code=422,
+            )
+        warn_findings = [
+            {"label": f.label, "rule": f.rule, "detail": f.detail}
+            for f in scan_result.findings
+            if f.severity == "warn"
+        ]
+
+        dataset_bytes: bytes | None = None
+        case_count: int | None = None
+        object_key: str | None = None
+
+        if parsed.kind == "cases":
+            if dataset is None:
+                raise PlatformError(
+                    "invalid_request", "'dataset' is required for a 'cases' suite", status_code=422
+                )
+            dataset_bytes = await dataset.read()
+            try:
+                goldens = parse_goldens(dataset_bytes.decode("utf-8"))
+            except UnicodeDecodeError as exc:
+                raise PlatformError(
+                    "invalid_request", f"dataset is not valid UTF-8: {exc}", status_code=422
+                ) from exc
+            except SuiteValidationError as exc:
+                raise PlatformError("invalid_dataset", exc.reason, status_code=422) from exc
+            case_count = len(goldens)
+            object_key = f"{parsed.name}/{parsed.version}.jsonl"
+
+        # Postgres uniqueness check *before* the MinIO write — same ordering fix as Skill
+        # Registry (D-036): a rejected duplicate publish must never overwrite an existing
+        # dataset stored at the same deterministic key.
+        row = Suite(
+            name=parsed.name,
+            version=parsed.version,
+            description=parsed.description,
+            kind=parsed.kind,
+            applies_to=parsed.applies_to,
+            metrics=parsed.metrics,
+            redteam_config=parsed.redteam_config,
+            dataset_object_key=object_key,
+            case_count=case_count,
+            scan_findings=warn_findings,
+            published_by=identity.id,
+        )
+        session.add(row)
+        try:
+            await session.commit()
+        except IntegrityError as exc:
+            await session.rollback()
+            raise PlatformError(
+                "already_published",
+                f"{parsed.name!r} version {parsed.version!r} is already published",
+                status_code=409,
+            ) from exc
+
+        if object_key is not None and dataset_bytes is not None:
+            await store.put_object(object_key, dataset_bytes, content_type="application/x-ndjson")
+
+        await session.refresh(row)
+        return {
+            "id": row.id,
+            "name": row.name,
+            "version": row.version,
+            "kind": row.kind,
+            "case_count": row.case_count,
+            "published_by": row.published_by,
+            "created_at": row.created_at.isoformat(),
+            "scan_warnings": warn_findings,
+        }
 
     return app
 
