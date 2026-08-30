@@ -256,6 +256,43 @@ services:
       identity-service:
         condition: service_started
 
+  contextforge:
+    # Backend for the Agent Gateway harness — never called directly by other services; only
+    # agent-gateway (below) talks to it, using its own bootstrap admin credential (D-043: our
+    # identity-service gates callers, ContextForge's credential stays a backend-only secret).
+    image: ghcr.io/ibm/mcp-context-forge:latest
+    profiles: ["gateway"]
+    security_opt:
+      - seccomp:unconfined
+    environment:
+      HOST: 0.0.0.0
+      DATABASE_URL: postgresql+psycopg://platform:platform@postgres:5432/agent_gateway
+      # Dev-only bootstrap secrets — never real production values, same posture as every other
+      # local-dev credential in this compose file (Postgres/MinIO). PLATFORM_ADMIN_EMAIL must
+      # NOT use a .local/.internal/etc TLD — ContextForge's email validator (via python
+      # email-validator) rejects reserved/special-use domains outright (found live).
+      JWT_SECRET_KEY: notgovharness-dev-jwt-secret-32chars-min
+      AUTH_ENCRYPTION_SECRET: notgovharness-dev-auth-encryption-secret-32chars
+      PLATFORM_ADMIN_EMAIL: admin@example.com
+      PLATFORM_ADMIN_PASSWORD: changeme123
+      # Otherwise the admin bootstrap account is forced through a "change your password" gate
+      # on first login (found live) — irrelevant noise for a backend service credential that's
+      # never used interactively.
+      PASSWORD_CHANGE_ENFORCEMENT_ENABLED: "false"
+    # ContextForge's own admin UI/API, not fronted by Traefik — agent-gateway is the only
+    # intended caller; published only for local debugging via the browser.
+    ports:
+      - "4444:4444"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4444/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
   spire-server:
     image: ghcr.io/spiffe/spire-server:1.15.1
     container_name: spire-server # referenced by name from spire-bootstrap's `docker exec`

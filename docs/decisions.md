@@ -454,3 +454,16 @@ harness has something real to federate and call through.** Without it, "done" wo
 already-built harnesses rather than mocks or isolated demos (Audit's live tampering test,
 Agent/Skill/Eval Registry's live-stack tests) — and it's the same role `upstream-stub` already
 plays for the Phase 0 façade demo, just for MCP instead of plain REST.
+
+**D-045 — Three real ContextForge bootstrap gotchas found live, before the compose config was
+trusted.** (1) `PLATFORM_ADMIN_EMAIL` cannot use a reserved/special-use TLD — `admin@...local`
+(this repo's own naming convention everywhere else) is rejected outright by ContextForge's email
+validator; used `admin@example.com` (RFC 2606) instead. The real cause was hidden behind a
+generic 422 until `EXPOSE_ERROR_DETAILS=true` was flipped on temporarily to diagnose it. (2)
+`PASSWORD_CHANGE_ENFORCEMENT_ENABLED=false` is required — otherwise the bootstrap admin account
+(a service credential, never used interactively more than once) gets stuck behind a "change your
+password" gate on first login. (3) `DATABASE_URL` needs the `+psycopg` driver suffix — plain
+`postgresql://` defaults to `psycopg2`, not installed in the image. **Why worth recording:** all
+three were verified by actually running the container and hitting real endpoints (`docker run`
+trials before ever touching compose), not assumed from docs — same discipline as D-032's
+self-deadlock and every other "found live" entry in this log.

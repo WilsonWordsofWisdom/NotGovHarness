@@ -1,6 +1,8 @@
 # Agent Gateway Harness — Design
 
-**Status:** design — not yet built, pending review.
+**Status:** step 1 (ContextForge compose integration) built and verified live — real login,
+admin-token issuance, and an authenticated `GET /gateways` call all confirmed against the actual
+running container (Postgres-backed, in compose, healthcheck passing). Steps 2-5 not yet built.
 **Date:** 2026-08-31
 **Wave:** 3 (Runtime & Policy) · first
 **Branch:** `feat/wave3-agent-gateway`
@@ -144,3 +146,16 @@ ContextForge / Redis** — single-instance reference deployment, no session affi
   once via `PLATFORM_ADMIN_EMAIL`/`_PASSWORD` at container start, stored in local `.env` like
   every other local-dev secret. A production deployment would want ContextForge's own API-key
   issuance flow wired into a proper secrets manager; out of scope for a reference platform.
+- **`PLATFORM_ADMIN_EMAIL` must not use a reserved/special-use TLD** (found live: `.local`,
+  matching this repo's `*.notgovharness.local` naming convention used everywhere else, is
+  rejected outright by ContextForge's email validator — `python-email-validator` treats it as a
+  special-use domain, not a config bug on our side). Used `admin@example.com` (RFC 2606) instead.
+  Cost a real debug cycle (generic `EXPOSE_ERROR_DETAILS=false` 422s hid the actual validation
+  message until that flag was flipped on temporarily to diagnose it).
+- **`PASSWORD_CHANGE_ENFORCEMENT_ENABLED=false` is required for a service-credential bootstrap
+  admin account** (found live) — otherwise first login after bootstrap returns 403
+  "password change required," which makes no sense for a credential a façade holds and never
+  logs in interactively with more than once.
+- **Postgres needs the `+psycopg` driver suffix** (`postgresql+psycopg://...`) — plain
+  `postgresql://` defaults to `psycopg2`, which isn't installed in the ContextForge image
+  (found live: `ModuleNotFoundError: No module named 'psycopg2'`).
