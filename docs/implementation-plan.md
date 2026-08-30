@@ -252,6 +252,10 @@ infra/DB/library delta each introduces.
   `guardrails-ai`; Llama Guard via LLM Gateway.
 - **Memory** (Mem0). Qdrant (`vector` profile) or pgvector; `mem0ai`, `qdrant-client`.
 - **Knowledge/RAG** (LlamaIndex). Qdrant/pgvector + MinIO; `llama-index`, a reranker.
+- **Sandbox** (E2B). Postgres `sandbox` (job metadata); execution in ephemeral microVMs.
+  Isolated compute for agent-generated code/tool execution (D-014) — was missing from this list
+  entirely until caught during Wave 3 planning; present in decisions.md and architecture.md all
+  along.
 - **Approvals/HITL**. Postgres `approvals`; `temporalio` signals; optional `humanlayer`.
 
 ### Wave 4 — Agent Lifecycle (composes everything)
