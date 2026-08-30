@@ -53,11 +53,25 @@ dependencies. Phase 0 is the concrete gate before any harness is built.
   [superpowers/specs/2026-08-30-skill-registry-harness-design.md](superpowers/specs/2026-08-30-skill-registry-harness-design.md)
   and decisions D-033..D-036 — also added `platform_core.objectstore` (a shared MinIO wrapper,
   D-034), reused by Eval Registry next.
+- **Eval Registry** — built and verified end to end (all 7 done-when criteria confirmed live: a
+  real suite, metadata + JSONL dataset, published through a running identity-service +
+  eval-registry, was fetched back byte-for-byte, and a gamed judge rubric was rejected). Design
+  was reviewed with the user before building (no external standard here, unlike Agent/Skill
+  Registry) — researched DeepEval/Promptfoo/Ragas's actual config formats to land on an
+  engine-agnostic `{engine, metric_id, params}` metrics envelope over DeepEval's `Golden` field
+  names. Two suite kinds (`cases`/`redteam`) since red-teaming generates adversarial inputs
+  rather than asserting on fixed ones. Gained a judge-rubric prompt-injection scan (reusing a new
+  shared `platform_core.contentscan` engine extracted from Skill Registry's scan). Not yet merged
+  to `main`. See
+  [superpowers/specs/2026-08-30-eval-registry-harness-design.md](superpowers/specs/2026-08-30-eval-registry-harness-design.md)
+  and decisions D-039..D-042.
 - LLM Gateway (Wave 1) is paused by explicit choice: GovTech Platform AI was chosen as the
   provider, but the API key/base URL/auth details haven't been provided yet, and the key must
   never be committed to GitHub (local `.env` only, `${VAR}` substitution). Building Wave 2's
   registries (Identity-dependent, not LLM-Gateway-dependent) doesn't block on this.
-- Remaining Wave 2 harness: Eval Registry.
+- **Wave 2 is now complete** (Agent Registry, Skill Registry, Eval Registry — all merged or
+  ready to merge). Wave 3 (Runtime & Policy) is next, pending LLM Gateway (paused) for some of
+  its harnesses.
 
 | Area | State |
 |---|---|
