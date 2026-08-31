@@ -1,6 +1,7 @@
 # Approvals / HITL Harness — Design
 
-**Status:** design drafted, not yet built.
+**Status:** built and verified live — all 6 done-when criteria confirmed against the running
+stack, including a worker-restart-mid-flight test and the durable-timeout path.
 **Date:** 2026-08-31
 **Wave:** 3 (Runtime & Policy)
 **Branch:** `feat/wave3-approvals-hitl`
@@ -152,3 +153,11 @@ call in any real implementation.
   returned result.
 - Reviewer UI decision: user chose to build the minimal reviewer UI now rather than defer it —
   it's now in scope for this branch (see Build order step 6).
+- **Real bug found live**: `POST /approvals/{id}/decide`'s return type is
+  `dict[str, Any] | JSONResponse` (200 with the decided row, or 202 with the still-pending row if
+  the workflow hasn't finished persisting within the wait window) — FastAPI's route decorator
+  tries to build a Pydantic response field from that union and fails at import time
+  (`FastAPIError: Invalid args for response field!`), crashing the container on startup. Fixed
+  with `response_model=None` on that route — returning a raw `Response` object from a handler
+  needs this whenever the handler's other branch returns a plain value, not just when it always
+  returns a `Response`.

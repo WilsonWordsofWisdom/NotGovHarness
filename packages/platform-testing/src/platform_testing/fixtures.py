@@ -39,6 +39,7 @@ AGENT_REGISTRY_URL = os.getenv("PLATFORM_TEST_AGENT_REGISTRY_URL", "http://local
 SKILL_REGISTRY_URL = os.getenv("PLATFORM_TEST_SKILL_REGISTRY_URL", "http://localhost:8093")
 EVAL_REGISTRY_URL = os.getenv("PLATFORM_TEST_EVAL_REGISTRY_URL", "http://localhost:8094")
 AGENT_GATEWAY_URL = os.getenv("PLATFORM_TEST_AGENT_GATEWAY_URL", "http://localhost:8095")
+APPROVALS_URL = os.getenv("PLATFORM_TEST_APPROVALS_URL", "http://localhost:8096")
 MINIO_ENDPOINT = os.getenv("PLATFORM_TEST_MINIO_ENDPOINT", "localhost:9090")
 
 
@@ -228,6 +229,19 @@ def platform_agent_gateway_url() -> str:
             "--profile objectstore --profile gateway up -d)"
         )
     return AGENT_GATEWAY_URL
+
+
+@pytest.fixture
+def platform_approvals_url() -> str:
+    host, _, port = APPROVALS_URL.replace("http://", "").replace("https://", "").partition(":")
+    if not _reachable(host or "localhost", int(port or "8096")):
+        pytest.skip(
+            "approvals-service not reachable on "
+            f"{APPROVALS_URL} (start the stack: "
+            "docker compose --profile core --profile identity --profile temporal "
+            "--profile approvals up -d)"
+        )
+    return APPROVALS_URL
 
 
 @pytest.fixture
