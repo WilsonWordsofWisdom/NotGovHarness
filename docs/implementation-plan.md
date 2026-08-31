@@ -88,9 +88,26 @@ dependencies. Phase 0 is the concrete gate before any harness is built.
   with retry-on-401). **Merged to `main`.** See
   [superpowers/specs/2026-08-31-agent-gateway-harness-design.md](superpowers/specs/2026-08-31-agent-gateway-harness-design.md)
   and decisions D-043..D-047.
-- Remaining Wave 3 harnesses: Temporal (shared infra), Guardrails, Memory, Knowledge/RAG,
-  Sandbox, Approvals/HITL. LLM Gateway (Wave 1, still paused) blocks some of these (Memory and
-  Knowledge/RAG in particular typically need an LLM for extraction/generation).
+- **Temporal** (shared infra, not one of the 16 harnesses) — step 1 only (compose integration):
+  self-hosted server + Postgres-backed persistence (two databases, `temporal` +
+  `temporal_visibility`, confirmed via the admin-tools image's own bundled schema) + Web UI, all
+  verified live together with the rest of the stack, plus a real `temporalio` workflow
+  (worker+client+activity) executed end to end against the running server. **Merged to `main`
+  ahead of full scope, at explicit user direction**, to unblock Approvals/HITL and other Wave 3
+  work that depends on this infra. Steps 2-3 (a demo workflow wired into the platform that calls
+  a real service — Skill Registry, per D-049 — and a committed automated test) are **not yet
+  built** and remain a tracked gap, expected to land when Approvals/HITL is built against this
+  substrate. Four real integration findings along the way: the bare `temporal-sql-tool` CLI needs
+  its own connection flags (the server's env vars are consumed by its entrypoint wrapper, not the
+  tool itself), the server refuses to start without a dynamic config file even an empty one, and
+  the SDK's sandboxed workflow-validation re-import breaks if the workflow module itself calls
+  `asyncio.run()` at import time (fixed by splitting workflow/activity code from the
+  client/worker driver). See
+  [superpowers/specs/2026-09-01-temporal-harness-design.md](superpowers/specs/2026-09-01-temporal-harness-design.md)
+  and decisions D-048..D-049.
+- Remaining Wave 3 harnesses: Guardrails, Memory, Knowledge/RAG, Sandbox, Approvals/HITL (now
+  buildable against Temporal infra). LLM Gateway (Wave 1, still paused) blocks some of these
+  (Memory and Knowledge/RAG in particular typically need an LLM for extraction/generation).
 
 | Area | State |
 |---|---|

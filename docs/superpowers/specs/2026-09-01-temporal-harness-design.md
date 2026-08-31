@@ -1,11 +1,13 @@
 # Temporal (Shared Infra) — Design
 
-**Status:** step 1 (compose integration) built and verified live — schema setup, server, Web UI,
-and a real `temporalio` Python SDK workflow (worker + client + activity) all confirmed against
-the actual running stack. Steps 2-3 not yet built.
+**Status:** step 1 (compose integration) built, verified live, and merged to `main` — schema
+setup, server, Web UI, and a real `temporalio` Python SDK workflow (worker + client + activity)
+all confirmed against the actual running stack. Steps 2-3 (demo workflow calling Skill Registry
+per D-049, committed automated test) not yet built — merged ahead of them at explicit user
+direction to unblock Wave 3 work that depends on this infra.
 **Date:** 2026-09-01
 **Wave:** 3 (Runtime & Policy) · shared infra, not itself one of the 16 harnesses
-**Branch:** `feat/wave3-temporal`
+**Branch:** `feat/wave3-temporal` (merged to `main`)
 
 Related: [../../architecture.md](../../architecture.md) ·
 [../../decisions.md](../../decisions.md) (D-009, D-015) ·
