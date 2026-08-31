@@ -1,6 +1,8 @@
 # Sandbox Harness — Design
 
-**Status:** design drafted, not yet built.
+**Status:** built and verified live — all 6 done-when criteria confirmed against the running
+stack, including a kill-mid-execution / restart-reconciliation test that surfaced and fixed a
+real orphaned-container gap.
 **Date:** 2026-08-31
 **Wave:** 3 (Runtime & Policy)
 **Branch:** `feat/wave3-sandbox`
@@ -137,9 +139,16 @@ small enough for Postgres columns directly (no bundle/dataset shape like Skill o
   compromised or buggy `sandbox-service` has the same reach as anything else with
   `/var/run/docker.sock` — this is a known, accepted limitation of the local-Docker-instead-of-
   Firecracker tradeoff, not an oversight.
-- Container cleanup on a mid-execution `sandbox-service` crash/restart needs verification — an
-  orphaned container from a request that never reached its `finally` block would sit running
-  until something reaps it. Worth a live restart-during-execution test, similar in spirit to
-  Approvals/HITL's worker-restart proof.
-- Base image pull time (`python:3.12-slim`) on first use — pre-pulling in the Dockerfile/compose
-  build, not on first request, avoids a slow first execution.
+- **Real bug found live**: killing `sandbox-service` mid-execution (`docker kill`, simulating a
+  crash/OOM of the service itself) leaves its spawned container running indefinitely — the
+  executor's `finally: container.remove()` only runs if the *process* is still alive to reach it,
+  and nothing else in the original design supervised orphaned containers. Confirmed by actually
+  firing a long-running execution, killing the service mid-flight, and observing the container
+  still `Up` afterward. **Fixed**: every container this executor launches now carries a
+  `com.notgovharness.sandbox` label; a `reap_orphaned_containers()` pass runs once at startup
+  (a new lifespan hook) and force-removes anything still carrying that label — a prior process's
+  leftovers, not any container this fresh instance itself just started. Re-verified live: killed
+  mid-execution, orphan confirmed present, restarted, orphan confirmed gone. Also covered by a
+  committed executor-level test that manually plants a labeled orphan and asserts it's reaped.
+- Base image pull time (`python:3.12-slim`) on first use — **fixed**: pulled via a startup
+  lifespan hook (`ensure_image()`), not on the first request.

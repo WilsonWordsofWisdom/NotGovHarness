@@ -40,6 +40,7 @@ SKILL_REGISTRY_URL = os.getenv("PLATFORM_TEST_SKILL_REGISTRY_URL", "http://local
 EVAL_REGISTRY_URL = os.getenv("PLATFORM_TEST_EVAL_REGISTRY_URL", "http://localhost:8094")
 AGENT_GATEWAY_URL = os.getenv("PLATFORM_TEST_AGENT_GATEWAY_URL", "http://localhost:8095")
 APPROVALS_URL = os.getenv("PLATFORM_TEST_APPROVALS_URL", "http://localhost:8096")
+SANDBOX_URL = os.getenv("PLATFORM_TEST_SANDBOX_URL", "http://localhost:8097")
 MINIO_ENDPOINT = os.getenv("PLATFORM_TEST_MINIO_ENDPOINT", "localhost:9090")
 
 
@@ -242,6 +243,18 @@ def platform_approvals_url() -> str:
             "--profile approvals up -d)"
         )
     return APPROVALS_URL
+
+
+@pytest.fixture
+def platform_sandbox_url() -> str:
+    host, _, port = SANDBOX_URL.replace("http://", "").replace("https://", "").partition(":")
+    if not _reachable(host or "localhost", int(port or "8097")):
+        pytest.skip(
+            "sandbox-service not reachable on "
+            f"{SANDBOX_URL} (start the stack: "
+            "docker compose --profile core --profile identity --profile sandbox up -d)"
+        )
+    return SANDBOX_URL
 
 
 @pytest.fixture
