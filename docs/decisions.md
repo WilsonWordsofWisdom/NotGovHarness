@@ -516,3 +516,31 @@ actually orchestrates a call into the platform. **Why:** consistent with the pat
 across every prior harness (Audit's live tampering test, all three registries' live-stack tests,
 Agent Gateway's whole chain) — the point of a live verification step is proving the mechanism
 against real state, not a container-is-up check.
+
+---
+
+## 2026-08-31 — Sandbox harness: E2B's real self-hosting model doesn't fit this platform
+
+**D-050 — Sandbox is Docker-container isolation locally, built to E2B's API shape; real
+Firecracker/E2B-hosted is the documented production upgrade, not something this reference runs.**
+D-014 named E2B as the framework on the strength of it being "OSS, self-hostable" — checked
+against E2B's own self-hosting docs (`e2b-dev/infra`) before building anything, and that framing
+doesn't hold up: self-hosting E2B for real means Firecracker microVMs orchestrated by Nomad +
+Consul, provisioned via Terraform + Packer, on GCP (2,500GB SSD quota + 24 CPUs minimum, ~$1,250/
+mo at list price) or AWS instances with nested virtualization — no documented lighter-weight
+local mode exists at all. This directly breaks D-002 ("runs on one machine via `docker-compose`
+... not production cloud"); it's a cloud infrastructure project, not a container to add to the
+stack, and this repo's Docker Desktop host (linuxkit VM) has no exposed KVM for Firecracker
+regardless. **Decision:** build `sandbox-service` against the same operation shape E2B's API
+exposes (submit code, get stdout/stderr/exit code, network-isolated by default) but execute
+locally via plain Docker containers (`--network none`, memory/CPU limits, a hard timeout,
+non-root, removed after each run) instead of microVMs. Document real E2B (self-hosted or their
+hosted cloud) as the production upgrade path. **Why:** exact same shape of tradeoff as D-009's
+kagent decision for Deployment Pipeline — keep the packaging/execution *unit* compatible with the
+real thing's interface so the upgrade path is real, without dragging a multi-cloud orchestration
+platform into a single-machine reference. **Caveat carried forward, not hidden:** this
+reference's isolation boundary is between the *executed code* and the host, not between
+`sandbox-service` and the host — the service itself needs the Docker socket to spin up
+containers, which is real host-level privilege. A production deployment needs either real E2B or
+a properly brokered container-execution API, not direct socket access from a service that also
+takes arbitrary code as input.
