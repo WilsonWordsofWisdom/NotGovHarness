@@ -469,6 +469,38 @@ services:
       temporal:
         condition: service_healthy
 
+  # Sandbox (Wave 3, D-014, redesigned per D-050) — isolated code execution for agent-generated
+  # code. Real E2B needs Firecracker microVMs on a Nomad/Consul cluster, provisioned via
+  # Terraform on GCP/AWS — not something this single-machine docker-compose reference can run
+  # (see the harness design doc). This executes on plain, ephemeral Docker containers instead
+  # (--network none, memory/CPU limits, killed at a timeout), which is why it needs the *host's*
+  # Docker socket below — real host privilege, disclosed in D-050: the isolation boundary this
+  # buys is executed-code-vs-host, not sandbox-service-vs-host.
+  sandbox-service:
+    profiles: ["sandbox"]
+    security_opt:
+      - seccomp:unconfined
+    build:
+      context: .
+      dockerfile: services/sandbox-service/Dockerfile
+    environment:
+      SERVICE_NAME: sandbox-service
+      ENV: dev
+      DATABASE_URL: postgresql+asyncpg://platform:platform@postgres:5432/sandbox
+      OAUTH2_JWKS_URL: http://identity-service:8000/.well-known/jwks.json
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    ports:
+      - "8097:8000" # /executions — published for skip-if-down tests
+    depends_on:
+      postgres:
+        condition: service_healthy
+      otel-collector:
+        condition: service_started
+      identity-service:
+        condition: service_started
+
   spire-server:
     image: ghcr.io/spiffe/spire-server:1.15.1
     container_name: spire-server # referenced by name from spire-bootstrap's `docker exec`
