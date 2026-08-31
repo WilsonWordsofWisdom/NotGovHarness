@@ -1,0 +1,28 @@
+[project]
+name = "guardrails-service"
+version = "0.1.0"
+description = "A NotGovHarness service."
+requires-python = ">=3.12"
+dependencies = [
+    "platform-core",
+    "llm-guard>=0.3.15",
+    "nemoguardrails>=0.20",
+    "guardrails-ai>=0.10",
+    "guardrails-ai-regex-match>=0.1",
+    # llm-guard 0.3.15's own code still imports transformers.TFPreTrainedModel (TensorFlow
+    # support), which transformers 5.x dropped -- llm-guard's own dependency declaration is too
+    # loose for what its code actually needs, so this workspace pins it explicitly. Found live:
+    # `uv sync` alone resolved transformers 5.3.0 (nothing else in this workspace constrains it)
+    # and llm_guard's package __init__ crashed on import.
+    "transformers<5",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/guardrails_service"]
+
+[tool.uv.sources]
+platform-core = { workspace = true }

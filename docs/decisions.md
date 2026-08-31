@@ -544,3 +544,63 @@ reference's isolation boundary is between the *executed code* and the host, not 
 containers, which is real host-level privilege. A production deployment needs either real E2B or
 a properly brokered container-execution API, not direct socket access from a service that also
 takes arbitrary code as input.
+
+---
+
+## 2026-08-31 — Guardrails harness: three real findings from installing the locked stack
+
+Researched all three non-LLM layers of the locked stack (LLM Guard, NeMo Guardrails, Guardrails
+AI) by actually installing and running them, before designing anything — same discipline as
+D-050. Llama Guard (the fourth layer) is out of scope until LLM Gateway is unpaused, same as
+every other LLM-dependent piece.
+
+**D-051 — Guardrails AI's telemetry is opt-out, not opt-in, and phones home by default —**
+**and the fix has to be a file on disk, not an in-memory setting.** Constructing a `Guard()` and
+calling `.validate()` — with zero configuration, no `guardrails configure`, no `.guardrailsrc`
+file present — makes an outbound OTLP span export attempt to a hardcoded Guardrails-AI-owned AWS
+endpoint (`hty0gc1ok3.execute-api.us-east-1.amazonaws.com`). Traced to `guardrails.classes.rc.RC`,
+whose `enable_metrics` field defaults to `True` even with no rc file on disk at all. The first fix
+tried — mutating `guardrails.settings.settings.rc.enable_metrics = False` in memory before
+constructing anything — looked like it worked in an isolated scratch check, but didn't survive
+contact with the real code path: `Guard.__init__()` unconditionally ends with `self.configure()`,
+which reloads `settings.rc` fresh from `~/.guardrailsrc` on disk *every single time a `Guard` is
+constructed* — silently discarding the in-memory change. Confirmed live, step by step, that
+`Guard().use(...)` resets `enable_metrics` back to `True` immediately after it had been set
+`False`. **Actual fix, verified live:** write the real `~/.guardrailsrc` file with
+`enable_metrics=false` to disk before the first `Guard` anywhere in the process is constructed —
+this survives every reload because the reload reads the same file. **Why this matters enough to
+record twice:** a safety library silently exporting spans about validated content to a third
+party by default is exactly the kind of thing a *Guardrails* harness exists to prevent, and the
+first fix attempt being wrong in a way that only showed up once tested against the library's real
+construction path (not a bare scratch check) is its own lesson about verifying fixes, not just
+findings. Baked into `guardrails-service`'s own startup, not left as a per-deploy gotcha.
+
+**D-052 — Guardrails AI's own Hub CLI is deprecated by the tool itself; use public-PyPI
+validator packages instead.** Running `guardrails hub install hub://guardrails/<name>` prints the
+library's own deprecation notice: validators now ship as public PyPI packages
+(`guardrails-ai-<name>`), installable with plain `pip`/`uv`, no `guardrails configure` / hub
+account needed. Verified live: `guardrails-ai-regex-match` and `guardrails-ai-detect-pii` both
+install and run correctly via direct `pip install` + `from guardrails_ai.<name> import
+<Validator>` (not `guardrails.validators`, which ships empty except for the base class in this
+version). **Why:** pin these the same way every other dependency in this repo is pinned — in
+`pyproject.toml` — rather than routing through a registry CLI this tool's own maintainers are
+retiring.
+
+**D-053 — NeMo Guardrails' pattern-based rails run with zero LLM configured; topical/self-check
+rails are deferred like Llama Guard.** Verified live: a Colang flow that blocks on a banned
+substring runs correctly via `LLMRails(config).generate(...)` with an empty `models: []` block
+(a startup warning, no error, no LLM Gateway call). NeMo's LLM-backed rail types (self-check
+jailbreak detection, topical rails) are out of scope for the same reason Llama Guard is — no LLM
+Gateway yet.
+
+**Also found, informational (no fix needed, just a build-order note):** LLM Guard's rule-based
+scanners (`BanSubstrings`, `Regex`, `TokenLimit`) work standalone with no network/model
+dependency, but the package's own install pulls in `torch`+`transformers`+`spacy`
+(~750MB) regardless of which scanners are actually used — its ML-based scanners (prompt-injection
+classifier, toxicity, PII) additionally download a model on first use. `guardrails-ai-detect-pii`
+similarly downloads a ~400MB spaCy model (`en_core_web_lg`) via `presidio` on first
+instantiation, not at `pip install` time — any of these need pre-warming at Docker build time,
+not left to the first live request, same lesson as Sandbox's base-image pre-pull (Non-goal for
+v1: shipped with the lightweight, no-model-download layers only — `LLM Guard`'s rule scanners,
+`NeMo`'s keyword rail, `guardrails-ai-regex-match` — with the ML-based scanners documented as a
+follow-up, not a gap found and left unaddressed).

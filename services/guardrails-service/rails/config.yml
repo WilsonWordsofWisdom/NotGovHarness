@@ -1,0 +1,8 @@
+# No LLM configured on purpose (D-053): this rail is pattern-based only. LLM-backed rail types
+# (self-check jailbreak detection, topical rails) are deferred until LLM Gateway is unpaused,
+# same as Llama Guard.
+models: []
+rails:
+  input:
+    flows:
+      - block banned keywords
