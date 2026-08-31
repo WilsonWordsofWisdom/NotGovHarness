@@ -418,6 +418,57 @@ services:
       temporal:
         condition: service_healthy
 
+  # Approvals/HITL (Wave 3, D-015) — approve/edit/reject gates via a real Temporal workflow
+  # (ApprovalWorkflow), not a plain Postgres status column. Two containers share one image:
+  # the API (approvals-service) starts/signals workflows; the worker actually executes them
+  # (and persists their outcome back to Postgres via an activity) — the first non-HTTP-server
+  # long-running process in this stack.
+  approvals-service:
+    profiles: ["approvals"]
+    security_opt:
+      - seccomp:unconfined
+    build:
+      context: .
+      dockerfile: services/approvals-service/Dockerfile
+    environment:
+      SERVICE_NAME: approvals-service
+      ENV: dev
+      DATABASE_URL: postgresql+asyncpg://platform:platform@postgres:5432/approvals
+      OAUTH2_JWKS_URL: http://identity-service:8000/.well-known/jwks.json
+      TEMPORAL_ADDRESS: temporal:7233
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+    ports:
+      - "8096:8000" # /approvals, /ui — published for skip-if-down tests
+    depends_on:
+      postgres:
+        condition: service_healthy
+      otel-collector:
+        condition: service_started
+      identity-service:
+        condition: service_started
+      temporal:
+        condition: service_healthy
+
+  approvals-worker:
+    profiles: ["approvals"]
+    security_opt:
+      - seccomp:unconfined
+    build:
+      context: .
+      dockerfile: services/approvals-service/Dockerfile
+    command: ["python", "-m", "approvals_service.worker"]
+    environment:
+      SERVICE_NAME: approvals-worker
+      ENV: dev
+      DATABASE_URL: postgresql+asyncpg://platform:platform@postgres:5432/approvals
+      TEMPORAL_ADDRESS: temporal:7233
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+    depends_on:
+      postgres:
+        condition: service_healthy
+      temporal:
+        condition: service_healthy
+
   spire-server:
     image: ghcr.io/spiffe/spire-server:1.15.1
     container_name: spire-server # referenced by name from spire-bootstrap's `docker exec`
