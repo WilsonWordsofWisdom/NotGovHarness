@@ -425,3 +425,69 @@ recommends under 500 lines) and is the primary thing a caller reads on every req
 set — especially a safety/red-team pack — can be large and isn't read on every list/get call, so
 duplicating it would trade disk space and drift risk for a read-latency win nothing currently
 needs.
+
+---
+
+## 2026-08-31 — Agent Gateway harness design (Wave 3, first)
+
+Full design: [superpowers/specs/2026-08-31-agent-gateway-harness-design.md](superpowers/specs/2026-08-31-agent-gateway-harness-design.md).
+Reviewed with the user before building.
+
+**D-043 — `agent-gateway` is a façade in front of ContextForge; ContextForge does not validate
+identity-service's tokens directly.** Researched against the real `IBM/mcp-context-forge` repo:
+ContextForge *can* trust an external OAuth2 issuer (`SSO_API_TOKEN_AUTH_ENABLED` +
+`trusted_for_api_auth`), but only via registering it as a full "Generic OIDC provider," which
+needs a working `authorization_url` (browser-redirect login) — identity-service only implements
+`client_credentials` + RFC 8693 token-exchange, no authorization-code flow. **Why:** building an
+authorization-code endpoint solely to satisfy ContextForge's provider-registration model, for a
+login flow nothing would ever use, is real unforced work for an opt-in ContextForge feature with
+at least one documented rough edge. The standard façade pattern (architecture.md already names
+ContextForge as a façade example) does the same job with a pattern this platform has already
+proven three times: our identity-service gates callers, the upstream tool's native credential
+(here, ContextForge's bootstrap admin login) stays a backend-only secret the façade holds —
+same shape as Langfuse's API key pair in the Observability harness.
+
+**D-044 — `mcp-skills-demo`, a small new MCP server wrapping Skill Registry, exists so this
+harness has something real to federate and call through.** Without it, "done" would mean
+"ContextForge's container started," not "the routing mechanism actually works end to end."
+**Why:** matches this platform's established preference for proving mechanisms against real,
+already-built harnesses rather than mocks or isolated demos (Audit's live tampering test,
+Agent/Skill/Eval Registry's live-stack tests) — and it's the same role `upstream-stub` already
+plays for the Phase 0 façade demo, just for MCP instead of plain REST.
+
+**D-045 — Three real ContextForge bootstrap gotchas found live, before the compose config was
+trusted.** (1) `PLATFORM_ADMIN_EMAIL` cannot use a reserved/special-use TLD — `admin@...local`
+(this repo's own naming convention everywhere else) is rejected outright by ContextForge's email
+validator; used `admin@example.com` (RFC 2606) instead. The real cause was hidden behind a
+generic 422 until `EXPOSE_ERROR_DETAILS=true` was flipped on temporarily to diagnose it. (2)
+`PASSWORD_CHANGE_ENFORCEMENT_ENABLED=false` is required — otherwise the bootstrap admin account
+(a service credential, never used interactively more than once) gets stuck behind a "change your
+password" gate on first login. (3) `DATABASE_URL` needs the `+psycopg` driver suffix — plain
+`postgresql://` defaults to `psycopg2`, not installed in the image. **Why worth recording:** all
+three were verified by actually running the container and hitting real endpoints (`docker run`
+trials before ever touching compose), not assumed from docs — same discipline as D-032's
+self-deadlock and every other "found live" entry in this log.
+
+**D-046 — ContextForgeClient retries once on a 401, re-logging in, rather than trusting its own
+expiry clock alone.** Found live: rebuilding the ContextForge container invalidated the façade's
+still-cached, not-yet-expired-by-`expires_in` token, and every subsequent call kept failing with
+a spurious "Invalid authentication credentials" until the façade itself was restarted. **Why:**
+the façade's cache assumed the only way a token goes bad is time — ContextForge's own session
+state can invalidate one for other reasons (a restart, in this case) that the client has no way
+to predict in advance. A single retry-with-fresh-login on 401 handles that class of failure
+without a caller of the façade ever seeing it, at the cost of one extra login call only on the
+(rare) occasion the cache was already wrong.
+
+**D-047 — SSRF protection and DNS-rebinding protection both needed explicit, documented
+loosening for this reference deployment — not disabled, targeted.** ContextForge's default SSRF
+protection blocks registering any gateway whose URL resolves to a private network address; every
+MCP server in this platform genuinely lives on the compose-internal Docker network, which is
+exactly what that protection exists to catch. `SSRF_ALLOW_PRIVATE_NETWORKS=true` allows it while
+leaving `SSRF_BLOCKED_NETWORKS`/`_HOSTS` (cloud metadata endpoints, etc.) still enforced.
+Separately, `mcp-skills-demo`'s own DNS-rebinding `Host`-header allowlist rejected ContextForge's
+Docker-network hostname (`mcp-skills-demo:8000` isn't `localhost`) with a real `421`; disabled
+via `TransportSecuritySettings(enable_dns_rebinding_protection=False)` since this server is never
+reached outside that network. **Why worth a decision entry, not just a risk note:** both are real
+security features being *narrowed for a documented, understood reason* (the reference platform's
+actual network topology), not blanket-disabled — the distinction matters if this pattern is ever
+copied into a less-contained deployment.

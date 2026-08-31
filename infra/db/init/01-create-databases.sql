@@ -18,3 +18,5 @@ CREATE DATABASE skill_registry OWNER platform;
 CREATE DATABASE skill_registry_test OWNER platform;
 CREATE DATABASE eval_registry OWNER platform;
 CREATE DATABASE eval_registry_test OWNER platform;
+-- ContextForge (Agent Gateway harness) manages its own schema/migrations against this DB.
+CREATE DATABASE agent_gateway OWNER platform;
