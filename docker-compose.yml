@@ -344,6 +344,80 @@ services:
       contextforge:
         condition: service_healthy
 
+  # Temporal isn't one of the 16 harnesses — shared infra Approvals/HITL (Wave 3) and
+  # Deployment Pipeline (Wave 4) build on, same relationship Postgres/Redpanda/MinIO already
+  # have to their consumers (D-048). Real Postgres-backed server, not the CLI's ephemeral
+  # start-dev mode, matching db-per-service on the shared Postgres container like everything
+  # else already built.
+  temporal-schema-setup:
+    # One-shot: applies Temporal's own schema (main + visibility, its own architecture splits
+    # them) via temporal-sql-tool, then exits — `temporal` below waits for it to complete
+    # successfully rather than racing a server boot against an unmigrated database.
+    image: temporalio/admin-tools:1.31.2
+    profiles: ["temporal"]
+    entrypoint: sh
+    command: >
+      -c "
+      temporal-sql-tool --plugin postgres12 --endpoint postgres --port 5432 --user platform --password platform --database temporal setup-schema -v 0.0 &&
+      temporal-sql-tool --plugin postgres12 --endpoint postgres --port 5432 --user platform --password platform --database temporal update-schema -d /etc/temporal/schema/postgresql/v12/temporal/versioned &&
+      temporal-sql-tool --plugin postgres12 --endpoint postgres --port 5432 --user platform --password platform --database temporal_visibility setup-schema -v 0.0 &&
+      temporal-sql-tool --plugin postgres12 --endpoint postgres --port 5432 --user platform --password platform --database temporal_visibility update-schema -d /etc/temporal/schema/postgresql/v12/visibility/versioned
+      "
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  temporal:
+    image: temporalio/server:1.31.2
+    profiles: ["temporal"]
+    environment:
+      DB: postgres12
+      DB_PORT: "5432"
+      POSTGRES_USER: platform
+      POSTGRES_PWD: platform
+      POSTGRES_SEEDS: postgres
+      BIND_ON_IP: 0.0.0.0
+      # The server refuses to start at all without this file existing (found live) — empty is
+      # a valid, complete dynamic config for this reference deployment.
+      DYNAMIC_CONFIG_FILE_PATH: /etc/temporal/config/dynamicconfig/docker.yaml
+    volumes:
+      - ./infra/temporal/dynamic_config.yaml:/etc/temporal/config/dynamicconfig/docker.yaml:ro
+    ports:
+      - "7233:7233" # gRPC frontend — published for skip-if-down tests (real temporalio SDK)
+    depends_on:
+      temporal-schema-setup:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "7233"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 5s
+
+  temporal-namespace-setup:
+    # One-shot: registers the "default" namespace every workflow in this reference platform
+    # uses — idempotent (a re-run against an already-registered namespace is a no-op, not an
+    # error worth failing compose over).
+    image: temporalio/admin-tools:1.31.2
+    profiles: ["temporal"]
+    entrypoint: sh
+    command: -c "temporal operator namespace create --address temporal:7233 -n default || true"
+    depends_on:
+      temporal:
+        condition: service_healthy
+
+  temporal-ui:
+    image: temporalio/ui:latest
+    profiles: ["temporal"]
+    environment:
+      TEMPORAL_ADDRESS: temporal:7233
+      TEMPORAL_CORS_ORIGINS: http://localhost:8081
+    ports:
+      - "8081:8080" # Web UI — 8080 is already Traefik's dashboard port on the host
+    depends_on:
+      temporal:
+        condition: service_healthy
+
   spire-server:
     image: ghcr.io/spiffe/spire-server:1.15.1
     container_name: spire-server # referenced by name from spire-bootstrap's `docker exec`

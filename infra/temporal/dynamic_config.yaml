@@ -1,0 +1,3 @@
+# Temporal's dynamic-config file must exist at DYNAMIC_CONFIG_FILE_PATH or the server refuses
+# to start at all (found live — see the Temporal harness design's Risks section) — empty is a
+# valid, complete config for this reference deployment; no overrides needed yet.

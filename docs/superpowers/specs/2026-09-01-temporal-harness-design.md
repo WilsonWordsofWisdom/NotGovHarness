@@ -1,6 +1,8 @@
 # Temporal (Shared Infra) — Design
 
-**Status:** design — not yet built.
+**Status:** step 1 (compose integration) built and verified live — schema setup, server, Web UI,
+and a real `temporalio` Python SDK workflow (worker + client + activity) all confirmed against
+the actual running stack. Steps 2-3 not yet built.
 **Date:** 2026-09-01
 **Wave:** 3 (Runtime & Policy) · shared infra, not itself one of the 16 harnesses
 **Branch:** `feat/wave3-temporal`
@@ -101,6 +103,26 @@ other "don't scale what doesn't need scaling yet" call already made in this plat
 
 ## Risks / watch-items
 
-(to be filled in as real findings come up during the build — every prior harness has hit at
-least one thing worth documenting here; Temporal's own schema-setup and env-var surface is a
-reasonable place to expect one, given how much ContextForge's bootstrap needed correcting)
+- **The dynamic-config file must exist at `DYNAMIC_CONFIG_FILE_PATH` or the server refuses to
+  start at all** (found live: `unable to validate dynamic config: ... no such file or
+  directory`, before the server even gets to opening a database connection). The image ships no
+  default — `infra/temporal/dynamic_config.yaml` is mounted in, empty but present, which is a
+  complete valid config for this reference deployment (no overrides needed yet).
+- **Temporal splits persistence into two separate databases, `temporal` and
+  `temporal_visibility`**, each with its own schema directory in the image
+  (`/etc/temporal/schema/postgresql/v12/{temporal,visibility}`) — confirmed by actually applying
+  both schemas and watching the server boot, not assumed from the plan's single-line "Temporal
+  server + its Postgres." Not a db-per-service choice this platform made; Temporal's own
+  architecture.
+- **`temporal-sql-tool`'s env vars are different from the server's own env vars** (found live: an
+  initial attempt using the server's `DB`/`DB_PORT`/`POSTGRES_SEEDS`/etc. against the raw CLI
+  tool tried to connect to MySQL's default port 3306 instead of Postgres — those vars are
+  consumed by the *server's* entrypoint script, not the bare `temporal-sql-tool` binary, which
+  wants its own `--plugin`/`--endpoint`/`--user`/`--password`/`--database` flags instead).
+- **A workflow's defining module must have no side-effecting top-level code** (found live:
+  `RuntimeError: Failed validating workflow ...` from `asyncio.run() cannot be called from a
+  running event loop`, because the Python SDK's sandbox *re-imports* the module a workflow class
+  is defined in, to validate determinism — a single-file script with `asyncio.run(main())` at
+  module scope breaks under that reimport). Workflow/activity definitions belong in their own
+  module, separate from whatever client/worker driver code calls `asyncio.run()` — not a style
+  preference, a real requirement given how the sandbox works.
