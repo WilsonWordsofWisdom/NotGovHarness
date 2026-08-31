@@ -140,9 +140,25 @@ dependencies. Phase 0 is the concrete gate before any harness is built.
   not hidden. **Merged to `main`.** See
   [superpowers/specs/2026-08-31-sandbox-harness-design.md](superpowers/specs/2026-08-31-sandbox-harness-design.md)
   and decisions D-014 (pre-existing), D-050.
-- Remaining Wave 3 harnesses: Guardrails, Memory, Knowledge/RAG. LLM Gateway (Wave 1, still
-  paused) blocks Memory and Knowledge/RAG in particular (both typically need an LLM for
-  extraction/generation); Guardrails' non-Llama-Guard layers don't need it.
+- **Guardrails** (LLM Guard + NeMo Guardrails + Guardrails AI) — built and verified end to end
+  (all 6 done-when criteria confirmed live: clean input allowed; each layer's own trigger phrase
+  blocked and attributed to that specific layer; a submission tripping all three simultaneously
+  shows all three findings, not just the first; every check queryable afterward from Postgres;
+  zero outbound telemetry calls confirmed via the container's own logs). Llama Guard (the stack's
+  fourth layer) and NeMo's LLM-backed rail types stay deferred until LLM Gateway is unpaused, same
+  as Memory and Knowledge/RAG. Researched all three libraries live before designing (D-051..D-053)
+  — Guardrails AI's telemetry is opt-out by default, its own Hub CLI is deprecated by the
+  maintainers in favor of plain public-PyPI validator packages, and NeMo's pattern-based rails run
+  with zero LLM configured. Two more real bugs found only once running for real: NeMo's sync
+  `generate()` raises inside an already-running event loop (fixed with `generate_async`), and the
+  first telemetry fix (an in-memory settings mutation) silently didn't survive `Guard`'s own
+  reload-from-disk behavior — the real fix writes `~/.guardrailsrc` to disk before the first
+  `Guard` is constructed, re-verified against the live deployment specifically. **Merged to
+  `main`.** See
+  [superpowers/specs/2026-08-31-guardrails-harness-design.md](superpowers/specs/2026-08-31-guardrails-harness-design.md)
+  and decisions D-051..D-053.
+- Remaining Wave 3 harnesses: Memory, Knowledge/RAG — both blocked on the paused LLM Gateway
+  (Wave 1), which both typically need for extraction/generation/embeddings.
 
 | Area | State |
 |---|---|
