@@ -554,18 +554,26 @@ AI) by actually installing and running them, before designing anything — same 
 D-050. Llama Guard (the fourth layer) is out of scope until LLM Gateway is unpaused, same as
 every other LLM-dependent piece.
 
-**D-051 — Guardrails AI's telemetry is opt-out, not opt-in, and phones home by default.**
-Constructing a `Guard()` and calling `.validate()` — with zero configuration, no `guardrails
-configure`, no `.guardrailsrc` file present — makes an outbound OTLP span export attempt to a
-hardcoded Guardrails-AI-owned AWS endpoint
-(`hty0gc1ok3.execute-api.us-east-1.amazonaws.com`). Traced to `guardrails.classes.rc.RC`, whose
-`enable_metrics` field defaults to `True` even with no rc file on disk at all. **Fix, verified
-live:** writing `~/.guardrailsrc` with `enable_metrics=false` before the first `Guard` is
-constructed suppresses the export attempt entirely (confirmed: the warning/retry-storm present
-in an unpatched run is absent after the fix). **Why this matters enough to record:** a safety
-library silently exporting spans about validated content to a third party by default is exactly
-the kind of thing a *Guardrails* harness exists to prevent — this repo will not ship it
-unpatched. Baked into `guardrails-service`'s own startup, not left as a per-deploy gotcha.
+**D-051 — Guardrails AI's telemetry is opt-out, not opt-in, and phones home by default —**
+**and the fix has to be a file on disk, not an in-memory setting.** Constructing a `Guard()` and
+calling `.validate()` — with zero configuration, no `guardrails configure`, no `.guardrailsrc`
+file present — makes an outbound OTLP span export attempt to a hardcoded Guardrails-AI-owned AWS
+endpoint (`hty0gc1ok3.execute-api.us-east-1.amazonaws.com`). Traced to `guardrails.classes.rc.RC`,
+whose `enable_metrics` field defaults to `True` even with no rc file on disk at all. The first fix
+tried — mutating `guardrails.settings.settings.rc.enable_metrics = False` in memory before
+constructing anything — looked like it worked in an isolated scratch check, but didn't survive
+contact with the real code path: `Guard.__init__()` unconditionally ends with `self.configure()`,
+which reloads `settings.rc` fresh from `~/.guardrailsrc` on disk *every single time a `Guard` is
+constructed* — silently discarding the in-memory change. Confirmed live, step by step, that
+`Guard().use(...)` resets `enable_metrics` back to `True` immediately after it had been set
+`False`. **Actual fix, verified live:** write the real `~/.guardrailsrc` file with
+`enable_metrics=false` to disk before the first `Guard` anywhere in the process is constructed —
+this survives every reload because the reload reads the same file. **Why this matters enough to
+record twice:** a safety library silently exporting spans about validated content to a third
+party by default is exactly the kind of thing a *Guardrails* harness exists to prevent, and the
+first fix attempt being wrong in a way that only showed up once tested against the library's real
+construction path (not a bare scratch check) is its own lesson about verifying fixes, not just
+findings. Baked into `guardrails-service`'s own startup, not left as a per-deploy gotcha.
 
 **D-052 — Guardrails AI's own Hub CLI is deprecated by the tool itself; use public-PyPI
 validator packages instead.** Running `guardrails hub install hub://guardrails/<name>` prints the

@@ -1,0 +1,9 @@
+define flow block banned keywords
+  $has_dan = "act as dan" in $user_message
+  $has_no_restrictions = "pretend you have no restrictions" in $user_message
+  if $has_dan or $has_no_restrictions
+    bot refuse to respond
+    stop
+
+define bot refuse to respond
+  "This request was blocked by a guardrails input flow."

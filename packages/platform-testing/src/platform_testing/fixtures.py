@@ -41,6 +41,7 @@ EVAL_REGISTRY_URL = os.getenv("PLATFORM_TEST_EVAL_REGISTRY_URL", "http://localho
 AGENT_GATEWAY_URL = os.getenv("PLATFORM_TEST_AGENT_GATEWAY_URL", "http://localhost:8095")
 APPROVALS_URL = os.getenv("PLATFORM_TEST_APPROVALS_URL", "http://localhost:8096")
 SANDBOX_URL = os.getenv("PLATFORM_TEST_SANDBOX_URL", "http://localhost:8097")
+GUARDRAILS_URL = os.getenv("PLATFORM_TEST_GUARDRAILS_URL", "http://localhost:8098")
 MINIO_ENDPOINT = os.getenv("PLATFORM_TEST_MINIO_ENDPOINT", "localhost:9090")
 
 
@@ -255,6 +256,18 @@ def platform_sandbox_url() -> str:
             "docker compose --profile core --profile identity --profile sandbox up -d)"
         )
     return SANDBOX_URL
+
+
+@pytest.fixture
+def platform_guardrails_url() -> str:
+    host, _, port = GUARDRAILS_URL.replace("http://", "").replace("https://", "").partition(":")
+    if not _reachable(host or "localhost", int(port or "8098")):
+        pytest.skip(
+            "guardrails-service not reachable on "
+            f"{GUARDRAILS_URL} (start the stack: "
+            "docker compose --profile core --profile identity --profile guardrails up -d)"
+        )
+    return GUARDRAILS_URL
 
 
 @pytest.fixture

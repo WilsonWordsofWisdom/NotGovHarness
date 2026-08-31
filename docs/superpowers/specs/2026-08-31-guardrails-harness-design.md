@@ -1,6 +1,9 @@
 # Guardrails Harness — Design
 
-**Status:** design drafted, not yet built.
+**Status:** built and verified live — all 6 done-when criteria confirmed against the running
+stack, including two real bugs found and fixed only once running for real (NeMo's sync/async
+event-loop conflict, and a second-attempt telemetry fix after the first one silently didn't
+survive `Guard`'s own reload behavior).
 **Date:** 2026-08-31
 **Wave:** 3 (Runtime & Policy)
 **Branch:** `feat/wave3-guardrails`
@@ -129,12 +132,24 @@ directly, same shape as Sandbox's `executions` table.
 
 *(updated live with real findings during build)*
 
-- The D-051 telemetry fix (`~/.guardrailsrc`) needs to actually land in the container's home
-  directory for whatever user the process runs as — worth confirming directly in the built image,
-  not assuming the Dockerfile's `RUN` step and the runtime user agree on `$HOME`.
+- **Real bug found live, twice**: the first D-051 fix (mutating `settings.rc.enable_metrics` in
+  memory) looked correct in isolation but didn't survive `Guard.__init__()`'s own
+  `self.configure()` call, which reloads `settings.rc` fresh from disk on every construction —
+  confirmed live that `enable_metrics` silently reset to `True` right after being set `False`.
+  Fixed by writing the actual `~/.guardrailsrc` file to disk instead (module-level, at import
+  time, before any `Guard` is constructed) — this survives the reload because the reload reads
+  the same file. See D-051's updated entry. Written to `Path.home()`, confirmed live to land at
+  `/root/.guardrailsrc` under this image's runtime user.
+- **Real bug found live**: `LLMRails.generate()` (sync) raises `RuntimeError` when called from
+  inside an already-running event loop — invisible in a standalone script, fatal from a FastAPI
+  request handler. Fixed with `generate_async` + making `nemo_layer.check()` async; a dedicated
+  test (`test_nemo_check_works_inside_a_running_event_loop`) now guards this specifically, since
+  a scratch script can't catch it.
 - LLM Guard's import alone pulls ~750MB of dependencies (torch/transformers/spacy) even though
   v1 only uses its rule-based scanners — a real image-size cost worth being explicit about in the
-  compose file's own comments, same as Sandbox's Docker-socket disclosure.
+  compose file's own comments, same as Sandbox's Docker-socket disclosure. Also required an
+  explicit `transformers<5` pin in this service's own `pyproject.toml` — llm-guard 0.3.15's code
+  still imports `transformers.TFPreTrainedModel` (removed in transformers 5.x), and nothing else
+  in this workspace constrained the version, so `uv sync` alone resolved an incompatible 5.3.0.
 - NeMo Guardrails prints a "No main LLM specified" warning on every startup with `models: []` —
-  expected and harmless per D-053, but worth confirming it doesn't escalate to an error under a
-  different NeMo version pin.
+  expected and harmless per D-053.

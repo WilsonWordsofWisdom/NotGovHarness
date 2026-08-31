@@ -501,6 +501,34 @@ services:
       identity-service:
         condition: service_started
 
+  # Guardrails (Wave 3) — layered input/output safety checks: LLM Guard + NeMo Guardrails +
+  # Guardrails AI, always run together (defense in depth, not first-block-wins). Llama Guard (the
+  # stack's fourth layer) needs the paused LLM Gateway and isn't built yet. LLM Guard alone pulls
+  # in torch+transformers+spacy (~750MB) even though this harness only uses its rule-based
+  # scanners for v1 — a real image-size cost, not an oversight (see the harness design doc).
+  guardrails-service:
+    profiles: ["guardrails"]
+    security_opt:
+      - seccomp:unconfined
+    build:
+      context: .
+      dockerfile: services/guardrails-service/Dockerfile
+    environment:
+      SERVICE_NAME: guardrails-service
+      ENV: dev
+      DATABASE_URL: postgresql+asyncpg://platform:platform@postgres:5432/guardrails
+      OAUTH2_JWKS_URL: http://identity-service:8000/.well-known/jwks.json
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+    ports:
+      - "8098:8000" # /check, /checks — published for skip-if-down tests
+    depends_on:
+      postgres:
+        condition: service_healthy
+      otel-collector:
+        condition: service_started
+      identity-service:
+        condition: service_started
+
   spire-server:
     image: ghcr.io/spiffe/spire-server:1.15.1
     container_name: spire-server # referenced by name from spire-bootstrap's `docker exec`

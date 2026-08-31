@@ -24,6 +24,8 @@ CREATE DATABASE approvals OWNER platform;
 CREATE DATABASE approvals_test OWNER platform;
 CREATE DATABASE sandbox OWNER platform;
 CREATE DATABASE sandbox_test OWNER platform;
+CREATE DATABASE guardrails OWNER platform;
+CREATE DATABASE guardrails_test OWNER platform;
 -- Temporal manages its own schema against these two (main persistence + visibility store —
 -- Temporal's own architecture splits them, not a db-per-service choice we made).
 CREATE DATABASE temporal OWNER platform;
