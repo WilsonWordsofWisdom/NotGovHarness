@@ -88,26 +88,41 @@ dependencies. Phase 0 is the concrete gate before any harness is built.
   with retry-on-401). **Merged to `main`.** See
   [superpowers/specs/2026-08-31-agent-gateway-harness-design.md](superpowers/specs/2026-08-31-agent-gateway-harness-design.md)
   and decisions D-043..D-047.
-- **Temporal** (shared infra, not one of the 16 harnesses) — step 1 only (compose integration):
+- **Temporal** (shared infra, not one of the 16 harnesses) — step 1 (compose integration):
   self-hosted server + Postgres-backed persistence (two databases, `temporal` +
   `temporal_visibility`, confirmed via the admin-tools image's own bundled schema) + Web UI, all
   verified live together with the rest of the stack, plus a real `temporalio` workflow
   (worker+client+activity) executed end to end against the running server. **Merged to `main`
   ahead of full scope, at explicit user direction**, to unblock Approvals/HITL and other Wave 3
-  work that depends on this infra. Steps 2-3 (a demo workflow wired into the platform that calls
-  a real service — Skill Registry, per D-049 — and a committed automated test) are **not yet
-  built** and remain a tracked gap, expected to land when Approvals/HITL is built against this
-  substrate. Four real integration findings along the way: the bare `temporal-sql-tool` CLI needs
-  its own connection flags (the server's env vars are consumed by its entrypoint wrapper, not the
-  tool itself), the server refuses to start without a dynamic config file even an empty one, and
-  the SDK's sandboxed workflow-validation re-import breaks if the workflow module itself calls
-  `asyncio.run()` at import time (fixed by splitting workflow/activity code from the
-  client/worker driver). See
+  work that depends on this infra. Four real integration findings along the way: the bare
+  `temporal-sql-tool` CLI needs its own connection flags (the server's env vars are consumed by
+  its entrypoint wrapper, not the tool itself), the server refuses to start without a dynamic
+  config file even an empty one, and the SDK's sandboxed workflow-validation re-import breaks if
+  the workflow module itself calls `asyncio.run()` at import time (fixed by splitting
+  workflow/activity code from the client/worker driver). Steps 2-3 (a demo workflow calling a
+  real service, and a committed automated test, D-049) were deferred at merge time — **now
+  closed by Approvals/HITL below**, which is that real workflow. See
   [superpowers/specs/2026-09-01-temporal-harness-design.md](superpowers/specs/2026-09-01-temporal-harness-design.md)
   and decisions D-048..D-049.
-- Remaining Wave 3 harnesses: Guardrails, Memory, Knowledge/RAG, Sandbox, Approvals/HITL (now
-  buildable against Temporal infra). LLM Gateway (Wave 1, still paused) blocks some of these
-  (Memory and Knowledge/RAG in particular typically need an LLM for extraction/generation).
+- **Approvals/HITL** (D-015) — built and verified end to end (all 6 done-when criteria confirmed
+  live: a real `example-service` token starts a real Temporal `ApprovalWorkflow`, confirmed
+  running via `temporal workflow describe`; a separate `reviewer` token signals a decision and
+  the workflow's own activity writes it back to Postgres; a requester cannot decide their own
+  request (403); double-deciding is rejected (409); an undecided approval expires on its own
+  durable timer with no cron or poll loop; the worker was restarted mid-flight on a pending
+  approval and a decision sent afterward still landed — the concrete proof this needed Temporal's
+  durability, not just a Postgres status column). Two containers share one image for the first
+  time in this stack — an API and a separate long-running worker process, not another HTTP
+  server. Gained a minimal reviewer UI at `/ui` (D-037 shape) per explicit user choice. Also
+  delivers Temporal's own deferred demo-workflow-plus-test scope (D-049) as a side effect of
+  being exactly that real workflow. One real bug found live: a `dict | JSONResponse` return-type
+  union crashed FastAPI's route registration at import time (fixed with `response_model=None`).
+  **Merged to `main`.** See
+  [superpowers/specs/2026-08-31-approvals-hitl-harness-design.md](superpowers/specs/2026-08-31-approvals-hitl-harness-design.md)
+  and decision D-015 (pre-existing).
+- Remaining Wave 3 harnesses: Guardrails, Memory, Knowledge/RAG, Sandbox. LLM Gateway (Wave 1,
+  still paused) blocks some of these (Memory and Knowledge/RAG in particular typically need an
+  LLM for extraction/generation).
 
 | Area | State |
 |---|---|
