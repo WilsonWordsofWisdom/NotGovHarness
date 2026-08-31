@@ -70,8 +70,27 @@ dependencies. Phase 0 is the concrete gate before any harness is built.
   never be committed to GitHub (local `.env` only, `${VAR}` substitution). Building Wave 2's
   registries (Identity-dependent, not LLM-Gateway-dependent) doesn't block on this.
 - **Wave 2 is now complete and merged to `main`** (Agent Registry, Skill Registry, Eval
-  Registry). Wave 3 (Runtime & Policy) is next, pending LLM Gateway (paused) for some of its
-  harnesses.
+  Registry).
+
+**Wave 3 progress:**
+- **Agent Gateway** (ContextForge) — built and verified end to end (all 5 done-when criteria
+  confirmed live: a real bearer token from identity-service registers the real
+  `mcp-skills-demo` MCP server with a real ContextForge through the new `agent-gateway` façade,
+  then calls its `list_skills` tool through that same façade and gets back real Skill Registry
+  data). Design was reviewed with the user before building — the real question was auth:
+  ContextForge can validate external-OIDC tokens, but only by registering identity-service as a
+  full OIDC provider with a login flow it doesn't implement, so the standard façade pattern was
+  used instead (D-043). Five real bootstrap/integration findings along the way (D-045..D-047):
+  `.local` admin emails rejected, SSRF protection needed a targeted allow flag for the compose
+  network, the demo MCP server's DNS-rebinding protection rejected ContextForge's Docker-network
+  hostname, ContextForge federates tools under a prefixed name, and a ContextForge restart
+  invalidated the façade's cached token in a way its own expiry clock couldn't predict (fixed
+  with retry-on-401). **Merged to `main`.** See
+  [superpowers/specs/2026-08-31-agent-gateway-harness-design.md](superpowers/specs/2026-08-31-agent-gateway-harness-design.md)
+  and decisions D-043..D-047.
+- Remaining Wave 3 harnesses: Temporal (shared infra), Guardrails, Memory, Knowledge/RAG,
+  Sandbox, Approvals/HITL. LLM Gateway (Wave 1, still paused) blocks some of these (Memory and
+  Knowledge/RAG in particular typically need an LLM for extraction/generation).
 
 | Area | State |
 |---|---|

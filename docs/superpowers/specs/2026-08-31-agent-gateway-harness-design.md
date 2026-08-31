@@ -4,7 +4,7 @@
 actual running stack: a real bearer token from identity-service registers the real
 `mcp-skills-demo` MCP server with a real ContextForge through the `agent-gateway` façade, then
 calls its `list_skills` tool through that same façade and gets back real Skill Registry data.
-Not yet merged to `main`.
+**Merged to `main`.**
 **Date:** 2026-08-31
 **Wave:** 3 (Runtime & Policy) · first
 **Branch:** `feat/wave3-agent-gateway`
