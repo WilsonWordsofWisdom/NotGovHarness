@@ -120,9 +120,29 @@ dependencies. Phase 0 is the concrete gate before any harness is built.
   **Merged to `main`.** See
   [superpowers/specs/2026-08-31-approvals-hitl-harness-design.md](superpowers/specs/2026-08-31-approvals-hitl-harness-design.md)
   and decision D-015 (pre-existing).
-- Remaining Wave 3 harnesses: Guardrails, Memory, Knowledge/RAG, Sandbox. LLM Gateway (Wave 1,
-  still paused) blocks some of these (Memory and Knowledge/RAG in particular typically need an
-  LLM for extraction/generation).
+- **Sandbox** (D-014, redesigned per D-050) — built and verified end to end (all 6 done-when
+  criteria confirmed live: normal execution returns real stdout; a network-reaching submission is
+  observably blocked; a memory bomb is `oom_killed`; an infinite loop is `timed_out` at its
+  configured limit; every execution leaves zero leftover containers; every execution is
+  queryable afterward from Postgres). D-014 named E2B on the strength of it being
+  "self-hostable," but E2B's own self-hosting docs say otherwise — Firecracker microVMs on a
+  Nomad/Consul cluster, provisioned via Terraform on GCP/AWS, no lightweight local mode — which
+  breaks D-002 outright and doesn't fit a Docker Desktop host with no exposed KVM regardless.
+  Researched before designing anything (D-050): `sandbox-service` is built to E2B's operation
+  shape (submit code, get stdout/stderr/exit code, network-isolated by default) but executes on
+  plain ephemeral Docker containers — the same tradeoff shape as D-009's kagent decision for
+  Deployment Pipeline. Three isolation properties were verified empirically against this host's
+  real Docker Engine, not assumed: `--network none` genuinely blocks egress, memory limits are
+  kernel-enforced before Python's own allocator sees anything, and `container.kill()` reliably
+  stops a real infinite loop. One real bug found live: killing the service mid-execution left its
+  spawned container orphaned and running — fixed with container labeling plus a startup
+  reconciliation pass, re-verified live. Docker socket access is disclosed as real host privilege,
+  not hidden. **Merged to `main`.** See
+  [superpowers/specs/2026-08-31-sandbox-harness-design.md](superpowers/specs/2026-08-31-sandbox-harness-design.md)
+  and decisions D-014 (pre-existing), D-050.
+- Remaining Wave 3 harnesses: Guardrails, Memory, Knowledge/RAG. LLM Gateway (Wave 1, still
+  paused) blocks Memory and Knowledge/RAG in particular (both typically need an LLM for
+  extraction/generation); Guardrails' non-Llama-Guard layers don't need it.
 
 | Area | State |
 |---|---|
