@@ -20,3 +20,7 @@ CREATE DATABASE eval_registry OWNER platform;
 CREATE DATABASE eval_registry_test OWNER platform;
 -- ContextForge (Agent Gateway harness) manages its own schema/migrations against this DB.
 CREATE DATABASE agent_gateway OWNER platform;
+-- Temporal manages its own schema against these two (main persistence + visibility store —
+-- Temporal's own architecture splits them, not a db-per-service choice we made).
+CREATE DATABASE temporal OWNER platform;
+CREATE DATABASE temporal_visibility OWNER platform;

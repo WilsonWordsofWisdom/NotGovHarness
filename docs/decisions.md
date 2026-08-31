@@ -491,3 +491,28 @@ reached outside that network. **Why worth a decision entry, not just a risk note
 security features being *narrowed for a documented, understood reason* (the reference platform's
 actual network topology), not blanket-disabled — the distinction matters if this pattern is ever
 copied into a less-contained deployment.
+
+---
+
+## 2026-09-01 — Temporal (shared infra) design
+
+Full design: [superpowers/specs/2026-09-01-temporal-harness-design.md](superpowers/specs/2026-09-01-temporal-harness-design.md).
+Not one of the 16 harnesses — infra Approvals/HITL (Wave 3) and Deployment Pipeline (Wave 4)
+build on, same relationship Postgres/Redpanda/MinIO already have to the services that use them.
+
+**D-048 — Full Postgres-backed Temporal server, not the CLI's ephemeral `start-dev` mode.**
+Researched current deployment options: `temporal server start-dev` (single container, in-memory
+or SQLite, Web UI built in) versus the full multi-container server backed by a real database
+(`temporalio/auto-setup` + `temporalio/ui`, per `temporalio/samples-server`'s reference compose —
+the old `temporalio/docker-compose` repo is archived as of Jan 2026). **Why:** `start-dev` would
+be the only piece of infrastructure in this whole platform that doesn't survive a restart — every
+other harness already follows db-per-service on the shared Postgres container; Temporal gets a
+`temporal` database the same way, for one extra container's worth of complexity.
+
+**D-049 — The demo workflow calls Skill Registry, not a toy activity.** Same "prove it against
+something real" discipline as `mcp-skills-demo` wrapping Skill Registry for Agent Gateway (D-044)
+— a workflow whose one activity is `return "hello"` proves the SDK round-trips, not that Temporal
+actually orchestrates a call into the platform. **Why:** consistent with the pattern established
+across every prior harness (Audit's live tampering test, all three registries' live-stack tests,
+Agent Gateway's whole chain) — the point of a live verification step is proving the mechanism
+against real state, not a container-is-up check.
