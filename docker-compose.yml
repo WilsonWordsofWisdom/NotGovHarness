@@ -529,6 +529,64 @@ services:
       identity-service:
         condition: service_started
 
+  # LLM Gateway (Wave 1, resumed) — LiteLLM proxy backed by the user's already-running, natively
+  # installed host Ollama (D-056), not a containerized one: reuses an already-pulled model and
+  # keeps native Metal GPU acceleration a container under Docker Desktop's Linux VM wouldn't get.
+  # `host.docker.internal` already resolves on Docker Desktop; `extra_hosts` below is the portable
+  # form that also works on native Linux Docker Engine. GovTech Platform AI becomes a second
+  # infra/litellm/config.yaml model_list entry once real credentials exist (D-055) — this harness
+  # is the one piece of infra in this whole stack that depends on something outside
+  # `docker compose up` itself (a host-level Ollama installation), disclosed here, not hidden.
+  litellm:
+    image: ghcr.io/berriai/litellm-database:v1.99.0
+    profiles: ["llm"]
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./infra/litellm/config.yaml:/app/config.yaml:ro
+    command: ["--config=/app/config.yaml"]
+    environment:
+      DATABASE_URL: postgresql://platform:platform@postgres:5432/litellm
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY}
+      STORE_MODEL_IN_DB: "False"
+    ports:
+      - "4000:4000" # LiteLLM's own OpenAI-compatible API — published for skip-if-down tests
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - python3 -c "import urllib.request; urllib.request.urlopen('http://localhost:4000/health/liveliness')"
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  llm-gateway:
+    profiles: ["llm"]
+    security_opt:
+      - seccomp:unconfined
+    build:
+      context: .
+      dockerfile: services/llm-gateway/Dockerfile
+    environment:
+      SERVICE_NAME: llm-gateway
+      ENV: dev
+      OAUTH2_JWKS_URL: http://identity-service:8000/.well-known/jwks.json
+      LITELLM_URL: http://litellm:4000
+      LITELLM_VIRTUAL_KEY: ${LITELLM_VIRTUAL_KEY}
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+    ports:
+      - "8099:8000" # /chat/completions — published for skip-if-down tests
+    depends_on:
+      otel-collector:
+        condition: service_started
+      identity-service:
+        condition: service_started
+      litellm:
+        condition: service_healthy
+
   spire-server:
     image: ghcr.io/spiffe/spire-server:1.15.1
     container_name: spire-server # referenced by name from spire-bootstrap's `docker exec`

@@ -30,3 +30,5 @@ CREATE DATABASE guardrails_test OWNER platform;
 -- Temporal's own architecture splits them, not a db-per-service choice we made).
 CREATE DATABASE temporal OWNER platform;
 CREATE DATABASE temporal_visibility OWNER platform;
+-- LiteLLM (LLM Gateway harness) manages its own schema via Prisma against this DB.
+CREATE DATABASE litellm OWNER platform;

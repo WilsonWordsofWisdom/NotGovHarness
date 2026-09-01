@@ -1,6 +1,7 @@
 # LLM Gateway Harness — Design
 
-**Status:** design drafted, not yet built.
+**Status:** built and verified live — all 5 done-when criteria confirmed against the running
+stack.
 **Date:** 2026-09-01
 **Wave:** 1 (Foundation) — resumed after being paused since 2026-08-21
 **Branch:** `feat/wave1-llm-gateway`
@@ -112,8 +113,9 @@ Done when, live against the running stack:
 *(updated live with real findings during build)*
 
 - Host-level Ollama dependency (D-056) means this harness won't come up on a fresh clone/machine
-  without the user separately installing and running Ollama with the right model pulled — worth
-  a clear README/compose-comment call-out, not just buried in this spec.
+  without the user separately installing and running Ollama with the right model pulled — called
+  out in `docker-compose.yml`'s own comment block for this service, not just buried in this spec.
 - LiteLLM's `/key/generate` flow for minting the façade's backend virtual key is a one-time manual
-  (or bootstrap-script) step, not automatic on container start — needs to be either documented as
-  a manual step or scripted, decided during build.
+  step against a running `litellm` container (`curl -X POST .../key/generate` with the master
+  key) — documented in `.env.example` as the exact command, not scripted into compose startup;
+  each environment mints its own virtual key once and stores it in local `.env`.

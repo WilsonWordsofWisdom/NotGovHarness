@@ -42,6 +42,7 @@ AGENT_GATEWAY_URL = os.getenv("PLATFORM_TEST_AGENT_GATEWAY_URL", "http://localho
 APPROVALS_URL = os.getenv("PLATFORM_TEST_APPROVALS_URL", "http://localhost:8096")
 SANDBOX_URL = os.getenv("PLATFORM_TEST_SANDBOX_URL", "http://localhost:8097")
 GUARDRAILS_URL = os.getenv("PLATFORM_TEST_GUARDRAILS_URL", "http://localhost:8098")
+LLM_GATEWAY_URL = os.getenv("PLATFORM_TEST_LLM_GATEWAY_URL", "http://localhost:8099")
 MINIO_ENDPOINT = os.getenv("PLATFORM_TEST_MINIO_ENDPOINT", "localhost:9090")
 
 
@@ -268,6 +269,18 @@ def platform_guardrails_url() -> str:
             "docker compose --profile core --profile identity --profile guardrails up -d)"
         )
     return GUARDRAILS_URL
+
+
+@pytest.fixture
+def platform_llm_gateway_url() -> str:
+    host, _, port = LLM_GATEWAY_URL.replace("http://", "").replace("https://", "").partition(":")
+    if not _reachable(host or "localhost", int(port or "8099")):
+        pytest.skip(
+            "llm-gateway not reachable on "
+            f"{LLM_GATEWAY_URL} (start the stack: "
+            "docker compose --profile core --profile identity --profile llm up -d)"
+        )
+    return LLM_GATEWAY_URL
 
 
 @pytest.fixture
