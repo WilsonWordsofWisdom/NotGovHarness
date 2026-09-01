@@ -1,0 +1,19 @@
+# LLM Gateway harness (Wave 1, resumed) — LiteLLM proxy config.
+#
+# Backend is the user's already-running, natively-installed host Ollama (D-056) — reached via
+# host.docker.internal from inside the container, not a containerized Ollama (would re-download
+# an already-pulled model and lose native Metal GPU acceleration under Docker Desktop's Linux
+# VM). GovTech Platform AI becomes a second model_list entry here once real credentials exist
+# (D-055) — nothing downstream of this file needs to change when that lands.
+#
+# See docs/superpowers/specs/2026-09-01-llm-gateway-harness-design.md.
+
+model_list:
+  - model_name: qwen3.8
+    litellm_params:
+      model: ollama_chat/qwen3.8
+      api_base: http://host.docker.internal:11434
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
+  database_url: os.environ/DATABASE_URL
