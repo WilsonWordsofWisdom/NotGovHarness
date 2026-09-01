@@ -604,3 +604,41 @@ not left to the first live request, same lesson as Sandbox's base-image pre-pull
 v1: shipped with the lightweight, no-model-download layers only — `LLM Guard`'s rule scanners,
 `NeMo`'s keyword rail, `guardrails-ai-regex-match` — with the ML-based scanners documented as a
 follow-up, not a gap found and left unaddressed).
+
+---
+
+## 2026-09-01 — Agent Builder framework: re-evaluated, CrewAI confirmed
+
+**D-054 — CrewAI stays the Agent Builder framework, re-confirmed after researching current
+alternatives (Pydantic AI, LangGraph, AG2, Google ADK, OpenAI Agents SDK).** D-003 named CrewAI
+at the very start of this project, before any of Wave 2/3 existed to weigh it against. Revisited
+now that Agent Registry/Skill Registry/Eval Registry, Agent Gateway (ContextForge/MCP), Sandbox,
+and Guardrails are all real and built — the question was whether CrewAI still fits *this specific
+architecture*, not just "is it a good framework in the abstract."
+
+**What was compared:** license, MCP-native support (fits Agent Gateway), model-agnosticism via
+LiteLLM (fits LLM Gateway), API stability (this is a "build once" reference harness, not an
+actively-iterated product), and — the one negative finding worth recording — CrewAI disclosed
+four CVEs in 2026 (arbitrary code execution, SSRF, arbitrary file read), all rooted in its own
+built-in Code Interpreter and RAG-URL tools failing *insecurely* when Docker is unavailable
+(falls back to an unsandboxed execution mode rather than refusing).
+
+**Why CrewAI stays, despite that:** the CVEs are narrowly scoped to CrewAI's own built-in
+code-execution and RAG-URL tools specifically — not the framework's core orchestration. This
+platform was never going to use those built-in tools unmediated: D-001/D-002's whole posture is
+wrapping integrated OSS behind this platform's own contract, identity, and now (as of Wave 3)
+its own verified Sandbox (D-050, Docker-isolated, network/memory/timeout-enforced, empirically
+tested) and Guardrails (D-051..053, layered checks) harnesses. **Concrete mitigation, to apply
+when Agent Builder is actually built:** CrewAI's Code Interpreter and RAG-URL tools are disabled
+entirely; any agent that needs to run code or fetch a URL does so through the Sandbox/Guardrails
+harnesses via Agent Gateway, the same way every other tool call is meant to route. CrewAI's
+role-based Crew/Task/Process abstraction is also still the most turnkey fit for what an "Agent
+Builder" literally does — assembling a team of role-playing agents — compared to Pydantic AI's
+more programmatic, single-agent-first style (the strongest alternative found: MIT, stable API
+since Sep 2025, native MCP, and a native deferred-tool/HITL primitive that would have lined up
+well with the Temporal-based Approvals harness — but a real ecosystem-fit case, not a decisive
+one, against CrewAI's lower scaffolding cost for the crew pattern this harness needs). **Not
+reconsidered further:** LangGraph (its own durable-execution/checkpoint layer would duplicate the
+Temporal this platform already committed to for Approvals/HITL and Deployment Pipeline), AG2
+(still pre-1.0, MCP via community adapters only), Google ADK (multi-language surface and
+GCP-oriented tooling neither needed nor wanted here, against D-002's vendor-neutral posture).
