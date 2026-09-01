@@ -33,7 +33,26 @@ dependencies. Phase 0 is the concrete gate before any harness is built.
   `main`.** See
   [superpowers/specs/2026-08-29-audit-plane-harness-design.md](superpowers/specs/2026-08-29-audit-plane-harness-design.md)
   and decisions D-027..D-028.
-- Remaining Wave 1 harness: LLM Gateway (paused — see below).
+- **LLM Gateway** (LiteLLM) — resumed and built (was paused 2026-08-21 → 2026-09-01 waiting on
+  GovTech Platform AI credentials; see D-055..D-058). Built and verified end to end against a
+  local model instead of staying blocked (all 5 done-when criteria confirmed live: a real bearer
+  token gets a real, genuinely OpenAI-compatible chat completion through the full chain —
+  `llm-gateway` façade → LiteLLM → the user's already-running host Ollama → real model output;
+  spend/usage lands in LiteLLM's own Postgres; a caller without `llm_gateway:call` is rejected;
+  neither of LiteLLM's secrets ever appear in the façade's logs or responses). GovTech Platform
+  AI's API isn't publicly documented (checked directly, not assumed) — it becomes a second
+  `model_list` entry once real credentials exist, with zero downstream changes, since every
+  caller talks to LiteLLM's OpenAI-compatible endpoint, never a backend directly. Points at the
+  host's natively-installed Ollama rather than a containerized one, reusing an already-pulled
+  27.3B-parameter model and keeping native Metal GPU acceleration a container under Docker
+  Desktop's Linux VM wouldn't get — a real, disclosed tradeoff (this harness's infra lives
+  outside `docker compose up` itself, same shape as Sandbox's host Docker-socket dependency).
+  Pinned to an exact LiteLLM version after finding a March 2026 supply-chain incident that
+  compromised two specific versions. **Merged to `main`.** See
+  [superpowers/specs/2026-09-01-llm-gateway-harness-design.md](superpowers/specs/2026-09-01-llm-gateway-harness-design.md)
+  and decisions D-055..D-058.
+- **Wave 1 is now complete and merged to `main`** (Observability, Agent Identity, Audit plane,
+  LLM Gateway).
 
 **Wave 2 progress:**
 - **Agent Registry** — built and verified end to end (all 6 done-when criteria confirmed live: a
@@ -65,10 +84,6 @@ dependencies. Phase 0 is the concrete gate before any harness is built.
   `main`.** See
   [superpowers/specs/2026-08-30-eval-registry-harness-design.md](superpowers/specs/2026-08-30-eval-registry-harness-design.md)
   and decisions D-039..D-042.
-- LLM Gateway (Wave 1) is paused by explicit choice: GovTech Platform AI was chosen as the
-  provider, but the API key/base URL/auth details haven't been provided yet, and the key must
-  never be committed to GitHub (local `.env` only, `${VAR}` substitution). Building Wave 2's
-  registries (Identity-dependent, not LLM-Gateway-dependent) doesn't block on this.
 - **Wave 2 is now complete and merged to `main`** (Agent Registry, Skill Registry, Eval
   Registry).
 
@@ -145,8 +160,9 @@ dependencies. Phase 0 is the concrete gate before any harness is built.
   blocked and attributed to that specific layer; a submission tripping all three simultaneously
   shows all three findings, not just the first; every check queryable afterward from Postgres;
   zero outbound telemetry calls confirmed via the container's own logs). Llama Guard (the stack's
-  fourth layer) and NeMo's LLM-backed rail types stay deferred until LLM Gateway is unpaused, same
-  as Memory and Knowledge/RAG. Researched all three libraries live before designing (D-051..D-053)
+  fourth layer) and NeMo's LLM-backed rail types were deferred at build time since LLM Gateway
+  was still paused then — now unblocked (see below), picking these back up is a follow-up, not a
+  new design. Researched all three libraries live before designing (D-051..D-053)
   — Guardrails AI's telemetry is opt-out by default, its own Hub CLI is deprecated by the
   maintainers in favor of plain public-PyPI validator packages, and NeMo's pattern-based rails run
   with zero LLM configured. Two more real bugs found only once running for real: NeMo's sync
@@ -157,8 +173,9 @@ dependencies. Phase 0 is the concrete gate before any harness is built.
   `main`.** See
   [superpowers/specs/2026-08-31-guardrails-harness-design.md](superpowers/specs/2026-08-31-guardrails-harness-design.md)
   and decisions D-051..D-053.
-- Remaining Wave 3 harnesses: Memory, Knowledge/RAG — both blocked on the paused LLM Gateway
-  (Wave 1), which both typically need for extraction/generation/embeddings.
+- Remaining Wave 3 harnesses: Memory, Knowledge/RAG — no longer blocked now that LLM Gateway
+  (Wave 1) is built; both typically need an LLM for extraction/generation/embeddings, which now
+  has a real (local) backend to call.
 
 | Area | State |
 |---|---|
