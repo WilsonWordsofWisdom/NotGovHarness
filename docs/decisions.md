@@ -642,3 +642,52 @@ reconsidered further:** LangGraph (its own durable-execution/checkpoint layer wo
 Temporal this platform already committed to for Approvals/HITL and Deployment Pipeline), AG2
 (still pre-1.0, MCP via community adapters only), Google ADK (multi-language surface and
 GCP-oriented tooling neither needed nor wanted here, against D-002's vendor-neutral posture).
+
+---
+
+## 2026-09-01 — LLM Gateway harness (Wave 1, resumed)
+
+**D-055 — LLM Gateway is built and verified against local Ollama first; GovTech Platform AI is a
+documented config-only follow-up, not a blocker.** GovTech Platform AI
+(`studio.platform.ai.tech.gov.sg`) was chosen as the intended provider back at D-003-adjacent
+planning, but its API shape isn't publicly documented anywhere findable — the domain resolves to
+a generic gov.sg landing page, consistent with it being gated behind government SSO rather than a
+public product. Checked directly (fetched the site, searched broadly) before concluding this
+rather than assuming. **Decision:** stand up and fully verify the LiteLLM harness now against a
+local model, so every LLM-dependent harness paused on this (Guardrails' Llama Guard layer,
+Memory, Knowledge/RAG, Agent Builder, Evals runner) unblocks today instead of waiting on GovTech
+access. GovTech Platform AI becomes a second `model_list` entry in LiteLLM's config once real
+credentials exist — every downstream harness talks to the LiteLLM Gateway's OpenAI-compatible
+endpoint, never the backend directly, so nothing downstream needs to change when that lands.
+
+**D-056 — LiteLLM points at the user's already-running host Ollama (`host.docker.internal:11434`)
+rather than a separate containerized Ollama.** The user already has a real, capable model pulled
+locally (`qwen3.8:latest` — despite the name, actually Qwen's `qwen35` family at 27.3B parameters,
+Q4_K_M-quantized, `tools`/`thinking`/`vision` capable). Verified live: `host.docker.internal`
+resolves correctly from inside a container on this Docker Desktop setup, and a real chat
+completion against this model returns correct output — first call ~3.5s (model load into memory),
+subsequent calls fast (~390ms eval time), consistent with native macOS Ollama getting Metal GPU
+acceleration that a *containerized* Ollama would not get under Docker Desktop's Linux VM. **Why
+not run Ollama in a container instead (the original plan):** would mean re-downloading a model
+that already exists locally, and would run CPU-only inside Docker Desktop's VM (no Metal
+passthrough to containers) — strictly worse on both storage and speed for zero benefit. **Real
+tradeoff, disclosed not hidden:** this makes the compose stack depend on a host-level Ollama
+installation outside `docker-compose` — not fully self-contained via `docker compose up` alone on
+a fresh machine, the same shape of tradeoff Sandbox already accepted for host Docker-socket
+access. A fully-containerized Ollama remains a documented option (swap `host.docker.internal` for
+an in-compose `ollama` service) for anyone who wants full reproducibility over reusing an
+existing local model.
+
+**D-057 — LiteLLM pinned to `ghcr.io/berriai/litellm-database:v1.99.0`, not `:latest`.** Checked
+GitHub's releases directly (not assumed): a March 2026 supply-chain incident compromised LiteLLM
+versions `1.82.7`/`1.82.8` specifically (pulled, clean release at `1.83.0`); `v1.99.0` is the
+latest stable tag as of this decision, published the same day. **Why:** exact-version pinning on
+every third-party image is already this repo's standing practice; this is a case where drifting
+to `:latest` or an unpinned range could have concretely mattered.
+
+**D-058 — `llm-gateway` façade, same shape as Agent Gateway/ContextForge (D-043).** LiteLLM's own
+virtual-key system is a separate auth scheme from this platform's OAuth2/SPIFFE identity — same
+mismatch D-043 found with ContextForge. A thin façade service validates this platform's own
+bearer tokens (`require_scope("llm_gateway:call")`) and forwards to LiteLLM using a backend-only
+virtual key the façade holds, never exposed to callers — consistent with every other integrated
+OSS service in this repo, not a new pattern invented for this harness.
