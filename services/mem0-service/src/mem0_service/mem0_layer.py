@@ -1,4 +1,4 @@
-"""Wraps Mem0's `Memory`: pgvector + FastEmbed + llm-gateway (D-059..D-062).
+"""Wraps Mem0's `Memory`: pgvector + FastEmbed + llm-gateway (D-059..D-063).
 
 `MEM0_TELEMETRY` must be set before `mem0` is ever imported (D-059) — done here, at this module's
 top, before the `mem0` import line, since nothing else in this service imports it first.
@@ -15,26 +15,14 @@ import os
 
 os.environ.setdefault("MEM0_TELEMETRY", "false")
 
-from collections.abc import Awaitable, Callable  # noqa: E402
-from typing import Any, TypeVar  # noqa: E402
+from typing import Any  # noqa: E402
 
 from mem0 import Memory  # noqa: E402
 from starlette.concurrency import run_in_threadpool  # noqa: E402
 
+from platform_core.llm_gateway_auth import TokenClient, call_with_auth_retry  # noqa: E402
+
 from .config import Settings  # noqa: E402
-from .llm_gateway_client import TokenClient  # noqa: E402
-
-_T = TypeVar("_T")
-
-# Mem0 wraps the underlying openai SDK's auth failure into its own generic exception, losing the
-# original exception type but keeping this substring in the message (confirmed live: "Error code:
-# 401 - {'error': {'code': 'unauthorized', ... 'Signature has expired' ...}}").
-_AUTH_FAILURE_MARKERS = ("401", "unauthorized", "signature has expired")
-
-
-def _looks_like_auth_failure(exc: Exception) -> bool:
-    text = str(exc).lower()
-    return any(marker in text for marker in _AUTH_FAILURE_MARKERS)
 
 
 class Mem0Layer:
@@ -64,9 +52,9 @@ class Mem0Layer:
                 "config": {
                     "model": settings.llm_gateway_model,
                     "openai_base_url": settings.llm_gateway_url,
-                    # Placeholder — overwritten before every operation in _apply_token(). Mem0
-                    # requires a non-empty value at construction time even though the real one is
-                    # supplied later.
+                    # Placeholder — overwritten before every operation via call_with_auth_retry's
+                    # apply_token callback. Mem0 requires a non-empty value at construction time
+                    # even though the real one is supplied later.
                     "api_key": "unset",
                 },
             },
@@ -84,7 +72,7 @@ class Mem0Layer:
         first caller" lesson as Sandbox's image pull and Guardrails' spaCy model."""
         await self._ensure_memory()
 
-    async def _apply_token(self, memory: Memory, token: str) -> None:
+    def _apply_token(self, memory: Memory, token: str) -> None:
         # Reaching into Mem0's internal openai.OpenAI client: its `api_key` is read fresh on
         # every request (confirmed directly against the installed SDK's request-building code,
         # not just assumed from the property existing), so mutating it here before each
@@ -93,41 +81,21 @@ class Mem0Layer:
         # construction-time OpenAI client and this platform's async, refresh-based auth model.
         memory.llm.client.api_key = token
 
-    async def _call_with_auth_retry(self, memory: Memory, fn: Callable[[], Awaitable[_T]]) -> _T:
-        """Proactive refresh first, then one reactive retry on an auth-shaped failure.
-
-        Real finding, live: proactive refresh alone (checking this process's own
-        `time.monotonic()` clock against a cached expiry) is not sufficient — Docker Desktop can
-        suspend/throttle its VM's clock during host idle periods, so a token genuinely expired by
-        wall-clock time (which identity-service's JWT verification checks) can still look
-        unexpired here. This reactive backstop, same shape as `ContextForgeClient`'s retry-on-401
-        (D-046), is what actually saves a request when that happens — confirmed live: without
-        it, a request made after a long idle period failed with "Signature has expired" even
-        though the proactive check found nothing wrong.
-        """
-        token = await self._token_client.ensure_token()
-        await self._apply_token(memory, token)
-        try:
-            return await fn()
-        except Exception as exc:
-            if not _looks_like_auth_failure(exc):
-                raise
-            token = await self._token_client.force_refresh()
-            await self._apply_token(memory, token)
-            return await fn()
-
     async def add(self, messages: list[dict[str, Any]], user_id: str) -> dict[str, Any]:
         memory = await self._ensure_memory()
-        return await self._call_with_auth_retry(
-            memory, lambda: run_in_threadpool(memory.add, messages, user_id=user_id)
+        return await call_with_auth_retry(
+            self._token_client,
+            lambda token: self._apply_token(memory, token),
+            lambda: run_in_threadpool(memory.add, messages, user_id=user_id),
         )
 
     async def search(self, query: str, user_id: str) -> dict[str, Any]:
         # This mem0ai version's search()/get_all() take a `filters` dict, not a `user_id` kwarg
         # directly — verified against the installed version's actual signature before assuming.
         memory = await self._ensure_memory()
-        return await self._call_with_auth_retry(
-            memory,
+        return await call_with_auth_retry(
+            self._token_client,
+            lambda token: self._apply_token(memory, token),
             lambda: run_in_threadpool(memory.search, query, filters={"user_id": user_id}),
         )
 
