@@ -771,3 +771,62 @@ ContextForge-restart case). Verified live, twice: the exact failing scenario rep
 **Why this matters beyond Memory:** any future service holding a cached, monotonic-clock-tracked
 token under Docker Desktop has the same exposure — the reactive backstop, not just the proactive
 check, is the part that actually matters under real (not idealized) conditions.
+
+---
+
+## 2026-09-08 — Knowledge/RAG harness (Wave 3, completing the wave)
+
+Researched `llama-index-core` and its retrieval/rerank/vector-store integrations live before
+designing, same discipline as every prior harness — installed the real packages, checked for
+default telemetry, and proved the actual retrieval pipeline against a real (throwaway) pgvector
+database and the real running `llm-gateway` before committing to any of it.
+
+**D-064 — No default telemetry found in `llama-index-core`, confirmed rather than assumed.**
+Checked for the same class of finding as D-051/D-059 (Guardrails AI, Mem0): grepped for
+PostHog/analytics/telemetry modules and inspected `Settings.global_handler`, which defaults to
+`None` and is never set implicitly — LlamaCloud-related constants exist in the codebase but are
+inert unless a caller explicitly imports and configures a LlamaCloud integration, which this
+build does not. Recorded as a decision because *checking and finding nothing* is still real
+diligence, not skippable just because the last two libraries both failed this check.
+
+**D-065 — Hybrid search is `PGVectorStore`'s own built-in `hybrid_search=True`, not a separate
+BM25 index + fusion retriever.** D-013 named "hybrid search (BM25 + dense)" specifically.
+`PGVectorStore` supports `hybrid_search=True`, combining pgvector's dense cosine similarity with
+Postgres's own full-text search (`ts_rank`) — not literally the BM25 formula, but the same
+architectural role (sparse lexical signal + dense semantic signal, fused). Verified live against
+a real (throwaway) pgvector database: a query sharing zero words with the correct document
+("how many vacation days do I get" against "Employees are entitled to 15 days of paid annual
+leave...") still ranked it first. **Why this over a real BM25 retriever:** avoids a second index
+to build, sync, and keep consistent with the vector store — the same "reuse pgvector, don't add a
+second engine" reasoning as D-060, applied to search fusion instead of storage.
+
+**D-066 — Reranker is FastEmbed's `TextCrossEncoder`, not `FlagEmbedding`.** The natural LlamaIndex
+integration for reranking (`llama-index-postprocessor-flag-embedding-reranker`) pulls in
+`FlagEmbedding`, which pulls in the *full* ML stack — `torch`, `transformers`, `sentence-
+transformers`, `accelerate`, `datasets`, `pandas`, `pyarrow` — multiple GB, the same class of cost
+D-052's note on LLM Guard already flagged, and it would re-risk the exact `transformers<5` pin
+conflict D-052/guardrails-service needed (FlagEmbedding depends on a `transformers` release that,
+absent this workspace's existing pin, would resolve to an incompatible 5.x). Checked FastEmbed
+(already a dependency, D-061) for reranking support first rather than reaching for the "obvious"
+integration: it ships `TextCrossEncoder`, including `Xenova/ms-marco-MiniLM-L-6-v2` at ~80MB —
+verified live to rank a real query's candidate documents correctly, no `torch`/`transformers` in
+this service's dependency tree at all. No packaged LlamaIndex↔FastEmbed reranker integration
+exists, so this is a small (~20-line) custom `BaseNodePostprocessor` — the same "write the small
+glue LlamaIndex doesn't ship" posture as `TokenClient` itself.
+
+**D-067 — `TokenClient` is promoted to `platform-core`, not duplicated a second time.** D-062
+already predicted this: "Knowledge/RAG will need the same shape of call into `llm-gateway`... this
+establishes the pattern once rather than each future harness re-deriving it." Re-deriving the
+*pattern* without reusing the *code* would have meant a second, independently-maintained copy of
+the exact reactive-retry logic D-063 found was load-bearing — so `TokenClient` (fetch-cache-
+refresh + `force_refresh` reactive backstop) moves from `mem0_service` into
+`platform_core.llm_gateway_auth`, and `mem0-service` is updated to import the shared version
+rather than keep its own copy.
+
+**D-068 — Knowledge/RAG gets a minimal, real permission model, not a documented-but-unbuilt
+ambition.** D-013 calls for "permission-aware ingestion." Rather than either building a full
+RBAC system (out of scope for a reference implementation) or silently dropping the requirement
+(the CrewAI-CVE-mitigation pattern of "documented, not built" doesn't fit here, since this is
+core to the harness's own stated purpose, not a bolt-on tool), every document records who ingested
+it and a `visibility` of `shared` (default) or `private`; queries automatically exclude other
+callers' `private` documents. Minimal, but real and enforced, not aspirational.
