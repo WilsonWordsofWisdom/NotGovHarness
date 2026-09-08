@@ -193,9 +193,29 @@ dependencies. Phase 0 is the concrete gate before any harness is built.
   failing scenario. **Merged to `main`.** See
   [superpowers/specs/2026-09-08-memory-harness-design.md](superpowers/specs/2026-09-08-memory-harness-design.md)
   and decisions D-059..D-063.
-- Remaining Wave 3 harness: Knowledge/RAG — no longer blocked now that LLM Gateway (Wave 1) is
-  built, and can reuse the same pgvector-on-shared-Postgres and llm-gateway-calling patterns
-  Memory just established.
+- **Knowledge/RAG** (LlamaIndex) — built and verified end to end (all 6 done-when criteria
+  confirmed live: ingest chunks/embeds/stores a document with MinIO + Postgres provenance; a
+  query using different wording than the document's own text still retrieves it via real
+  pgvector hybrid search; the reranker demonstrably reorders candidates, not a no-op; generated
+  answers are grounded with real source-document provenance, including a correct "I don't know"
+  when nothing relevant is visible; a `private` document is invisible to a different caller and
+  visible to its own; write requires scope, query is open). Reused Memory's pgvector-on-shared-
+  Postgres and llm-gateway-calling patterns directly, and promoted the token-refresh client
+  (`TokenClient`) into `platform_core.llm_gateway_auth` so this and future harnesses share the
+  code, not just the pattern. Reranker is FastEmbed's own cross-encoder (~80MB) rather than
+  `FlagEmbedding`'s multi-GB torch/transformers stack. Two real findings during build: reusing
+  the existing `alice` identity-service client as a second test caller broke an unrelated,
+  already-passing delegation-demo test (fixed by seeding a new `bob` client instead — the
+  "different trust levels get separate identities" lesson from Approvals/HITL, re-learned rather
+  than applied proactively); and a second, differently-caused token-expiry bug from Memory's —
+  LlamaIndex's OpenAI wrapper caches its underlying client on first use, so the same
+  token-mutation pattern that works for Mem0 silently failed here until fixed with
+  `reuse_client=False`, re-verified live past a second real 300-second wait. **Merged to `main`.**
+  This completes Wave 3. See
+  [superpowers/specs/2026-09-08-knowledge-rag-harness-design.md](superpowers/specs/2026-09-08-knowledge-rag-harness-design.md)
+  and decisions D-064..D-069.
+- **Wave 3 is now complete and merged to `main`** (Agent Gateway, Temporal, Approvals/HITL,
+  Sandbox, Guardrails, Memory, Knowledge/RAG).
 
 | Area | State |
 |---|---|
