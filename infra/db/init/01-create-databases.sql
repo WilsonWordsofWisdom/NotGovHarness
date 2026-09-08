@@ -32,3 +32,7 @@ CREATE DATABASE temporal OWNER platform;
 CREATE DATABASE temporal_visibility OWNER platform;
 -- LiteLLM (LLM Gateway harness) manages its own schema via Prisma against this DB.
 CREATE DATABASE litellm OWNER platform;
+-- Mem0's pgvector backend manages its own table(s) here — this service's only migration enables
+-- the `vector` extension (needs the pgvector/pgvector:pg16 image, not plain postgres:16, D-060).
+CREATE DATABASE memory OWNER platform;
+CREATE DATABASE memory_test OWNER platform;
