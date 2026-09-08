@@ -905,3 +905,33 @@ Revoking them would have broken an already-passing, unrelated test the same way 
 did for Knowledge/RAG — so they stay, and `agent-builder-service` is seeded as a fully separate
 client instead, with its own `agentcard:sign`, `registry:publish`, `llm_gateway:call`, and
 `agent_gateway:call` grants.
+
+**D-074 — CrewAI has a second, separately-gated tracing subsystem distinct from D-070's
+`Telemetry` class; verified from source that it cannot reach the network in this harness's
+deployment context, not accepted on the reassurance of a local flag alone.** Live testing during
+build surfaced a "Tracing Preference Saved" console panel and a local JSON file write on the very
+first `crew.kickoff()`, even with `Crew(tracing=False)` passed explicitly — surprising, since
+`should_enable_tracing()`'s own docstring states the constructor override is priority 1. Reading
+`crewai/events/listeners/tracing/utils.py` end to end resolved it: `should_enable_tracing()`
+(which does honor `tracing=False`) governs whether an *already-running* crew collects/sends trace
+events, but `FirstTimeTraceHandler` — the thing that actually fired — is gated by a second,
+separate function, `should_auto_collect_first_time_traces()`, which checks only a test-env flag,
+`has_user_declined_tracing()`, an internal context var (not the constructor kwarg), and whether a
+local "first execution" marker file exists. The two gates are independent; the constructor
+override was never wired into the second one. Traced further to find whether this second path can
+actually send anything: its one network-capable branch,
+`FirstTimeTraceHandler._initialize_backend_and_send_events()` (constructs `PlusAPI`, POSTs to
+CrewAI's Enterprise backend), only runs if `prompt_user_for_trace_viewing()` returns `True` — and
+that function's first line is `if not _is_interactive_terminal(): return False`, where
+`_is_interactive_terminal()` is a bare `sys.stdin.isatty()` check with no import of any HTTP
+client anywhere in its call path. `agent-builder-service` runs as a FastAPI server with no TTY on
+stdin, so this branch is provably unreachable there — confirmed by reading the gating source, not
+inferred from the written file's `trace_consent: false` field alone. The only real side effects in
+this harness's context are a one-time console panel and a local bookkeeping file
+(`crewai_core.user_data._user_data_file()`, an OS-appropriate config path) recording
+`{first_execution_done, first_execution_at, user_id, machine_id, trace_consent: false}` — local
+only, never transmitted, same "local no-op is fine, only network egress matters" posture as
+D-059's `MEM0_TELEMETRY` finding. Mitigation: set `CREWAI_TRACING_ENABLED=false` *and* pass
+`tracing=False` on `Crew()` — belt-and-suspenders on `should_enable_tracing()`'s two checked
+inputs — and accept the first-time local file write/console panel as a disclosed, harmless,
+non-networked side effect rather than something needing further suppression.

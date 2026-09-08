@@ -6,7 +6,7 @@
 **Branch:** `feat/wave4-agent-builder`
 
 Related: [../../architecture.md](../../architecture.md) ·
-[../../decisions.md](../../decisions.md) (D-054, D-070..D-073) ·
+[../../decisions.md](../../decisions.md) (D-054, D-070..D-074) ·
 [../../implementation-plan.md](../../implementation-plan.md)
 
 ## Context
@@ -19,8 +19,8 @@ on that plan.
 `crewai` + `crewai-tools` were installed and their actual execution paths read before designing
 anything — same discipline as every prior harness, specifically checking for the two classes of
 bug already found twice in this platform (D-051/D-059/D-064's telemetry defaults, D-063/D-069's
-token-refresh-vs-client-caching), rather than assuming CrewAI is exempt from either. Four real
-findings, D-070..D-073 (see decisions.md) — none blocking, but each shaped this design:
+token-refresh-vs-client-caching), rather than assuming CrewAI is exempt from either. Five real
+findings, D-070..D-074 (see decisions.md) — none blocking, but each shaped this design:
 
 - Telemetry is a clean env-var gate (`CREWAI_DISABLE_TELEMETRY=true`), checked in the actual
   source, not inferred.
@@ -35,6 +35,12 @@ findings, D-070..D-073 (see decisions.md) — none blocking, but each shaped thi
   existing `agentcard:sign`/`registry:publish` grants are left untouched, having checked first
   (D-073) that Agent Registry's own tests depend on them — the same regression Knowledge/RAG hit
   by *not* checking first (D-069's `alice` sibling finding).
+- CrewAI's *tracing* subsystem (separate from D-070's telemetry) fires a one-time local
+  "first execution" flow that a plain `Crew(tracing=False)` does not fully suppress — traced into
+  its source (D-074) and confirmed the one branch that could send anything over the network is
+  hard-gated on an interactive TTY, which a FastAPI server never has. Mitigated by setting
+  `CREWAI_TRACING_ENABLED=false` alongside `tracing=False`; the harmless local file write/console
+  panel is accepted as-is.
 
 Per architecture.md's control-plane diagram, Agent Builder reads the registries, publishes a
 signed Agent Card, and (eventually) hands off to Deployment Pipeline — Deployment Pipeline itself
