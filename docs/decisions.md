@@ -883,7 +883,14 @@ the same `TokenClient` + mutate-`api_key`-before-each-call pattern that broke fo
 should work correctly here for the *opposite* reason Mem0's worked (Mem0 mutates the underlying
 client directly; here there is no persistent client to go stale) — still verified live against a
 real TTL boundary during build, not trusted on code-reading alone, since D-069 is exactly the
-lesson that a resemblance to a working fix isn't proof.
+lesson that a resemblance to a working fix isn't proof. **Verified**: waited 380 real seconds
+(past identity-service's 300-second TTL) with the service otherwise idle, then submitted a fresh
+`POST /builds` — it succeeded with genuine kickoff output and a real tool call, no auth failure.
+The reactive `call_with_auth_retry`/force-refresh backstop added to every one of this service's
+own token-use sites (llm-gateway, agent-gateway registration, card sign/publish/eval-select) was
+never actually triggered by this run — `ensure_token()`'s proactive 30-second safety margin was
+enough on its own here, unlike D-063's Docker-VM-clock-suspension scenario — but the backstop
+stays in place on the same "don't rely on one proactive check being enough, twice" reasoning.
 
 **D-072 — Tool access goes through `agent-gateway`'s REST API, not a raw MCP client connection.**
 `crewai-tools` ships `MCPServerAdapter`, a direct MCP-protocol client — using it would connect
@@ -935,3 +942,40 @@ D-059's `MEM0_TELEMETRY` finding. Mitigation: set `CREWAI_TRACING_ENABLED=false`
 `tracing=False` on `Crew()` — belt-and-suspenders on `should_enable_tracing()`'s two checked
 inputs — and accept the first-time local file write/console panel as a disclosed, harmless,
 non-networked side effect rather than something needing further suppression.
+
+**D-075 — crewai and guardrails-service's llm-guard have no jointly-satisfiable version, in this
+uv workspace's single-lockfile resolution; overridden at the workspace root, verified against
+llm-guard's own real behavior before trusting it.** `uv sync --package agent-builder-service`
+failed outright: llm-guard 0.3.15 exact-pins `regex==2024.7.24` and caps `json-repair<0.29`,
+while every crewai release checked (its full version history, from 0.60.0 through 1.15.20) needs
+either `regex<2025.0.0` (too old for anything crewai actually ships now) or `regex~=2026.1.15`
+(too new for llm-guard's pin) — no crewai version's range and llm-guard's pin ever overlap, so a
+recent crewai and llm-guard cannot coexist in one joint resolution regardless of which crewai
+version this harness picks. Fix: `[tool.uv] override-dependencies = ["json-repair>=0.60.1,<0.61.0",
+"regex>=2026.1.15,<2026.2.0"]` at the workspace root, forcing both packages to crewai's newer
+range workspace-wide — the same class of fix as D-052's `transformers<5`, just loosening an
+overly narrow pin instead of tightening a too-loose one. Not trusted on the override resolving
+cleanly alone: re-ran guardrails-service's own test suite (`uv sync --all-packages` +
+`pytest services/guardrails-service/tests`) against the overridden versions, specifically
+`test_llm_guard_allows_clean_text`/`test_llm_guard_blocks_banned_phrase`, which exercise
+`llm_guard_layer.check(...)` in-process (real scanner logic, not just an import) — both still
+correctly allow clean text and block a banned phrase under `regex==2026.1.15`, confirming the
+override didn't silently change llm-guard's actual detection behavior.
+
+**D-076 — crewai's own `mcp~=1.28.1` pin silently downgraded the whole workspace's `mcp` package,
+breaking mcp-skills-demo's already-passing tests; caught by re-running the full workspace's
+`pyright`/tests after D-075's fix, not assumed clean.** After adding crewai, `mcp` resolved to
+1.28.1 workspace-wide, down from the 2.1.1 `main` already had — an actual *downgrade*, not the
+usual "something wants newer" shape D-075 was. `uv tree --package agent-builder-service --invert
+-p mcp` showed why: `crewai` itself declares `mcp~=1.28.1` (`[1.28.1, 1.29.0)`), presumably for
+its own optional `crewai-tools` `MCPServerAdapter` support — a feature this harness deliberately
+never uses (D-072 goes through `agent-gateway`'s REST API instead). The downgrade broke
+`services/mcp-skills-demo`'s existing, already-passing `pyright` check and wasn't caught by
+`ruff`/the agent-builder-service-scoped checks alone — only surfaced by running `pyright` (and
+then tests) against the *whole* workspace, the same "verify the actual joint resolution, not just
+the package you're adding" discipline D-075 already established. Fix: extend the same
+`override-dependencies` list with `"mcp>=2.1.1,<3"`, restoring the version mcp-skills-demo's
+tests are written against — safe because crewai's own `mcp` usage is dead code from this
+harness's perspective. Verified by re-running mcp-skills-demo's full test suite (including its
+live-stack test against the real running container) and `pyright` on both services, plus the
+whole workspace's `ruff check .` / `pyright`, all clean, before trusting the override.

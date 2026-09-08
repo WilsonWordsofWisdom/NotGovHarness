@@ -1,12 +1,13 @@
 # Agent Builder Harness — Design
 
-**Status:** design drafted, not yet built.
+**Status:** built and verified live — all 6 done-when criteria confirmed against the running
+stack, including a real wait past the 300-second token TTL.
 **Date:** 2026-09-08
 **Wave:** 4 (Agent Lifecycle) — first Wave 4 harness
 **Branch:** `feat/wave4-agent-builder`
 
 Related: [../../architecture.md](../../architecture.md) ·
-[../../decisions.md](../../decisions.md) (D-054, D-070..D-074) ·
+[../../decisions.md](../../decisions.md) (D-054, D-070..D-076) ·
 [../../implementation-plan.md](../../implementation-plan.md)
 
 ## Context
@@ -19,8 +20,8 @@ on that plan.
 `crewai` + `crewai-tools` were installed and their actual execution paths read before designing
 anything — same discipline as every prior harness, specifically checking for the two classes of
 bug already found twice in this platform (D-051/D-059/D-064's telemetry defaults, D-063/D-069's
-token-refresh-vs-client-caching), rather than assuming CrewAI is exempt from either. Five real
-findings, D-070..D-074 (see decisions.md) — none blocking, but each shaped this design:
+token-refresh-vs-client-caching), rather than assuming CrewAI is exempt from either. Seven real
+findings, D-070..D-076 (see decisions.md) — none blocking, but each shaped this design:
 
 - Telemetry is a clean env-var gate (`CREWAI_DISABLE_TELEMETRY=true`), checked in the actual
   source, not inferred.
@@ -41,6 +42,11 @@ findings, D-070..D-074 (see decisions.md) — none blocking, but each shaped thi
   hard-gated on an interactive TTY, which a FastAPI server never has. Mitigated by setting
   `CREWAI_TRACING_ENABLED=false` alongside `tracing=False`; the harmless local file write/console
   panel is accepted as-is.
+- `crewai` has no jointly-satisfiable version with guardrails-service's `llm-guard` pin, and
+  separately its own `mcp~=1.28.1` pin silently downgrades the whole workspace's `mcp` package
+  below what mcp-skills-demo's tests need (D-075, D-076) — both fixed with workspace-root
+  `override-dependencies`, each verified against the affected service's own real test suite
+  before trusting it, not just a clean `uv sync`.
 
 Per architecture.md's control-plane diagram, Agent Builder reads the registries, publishes a
 signed Agent Card, and (eventually) hands off to Deployment Pipeline — Deployment Pipeline itself
@@ -108,16 +114,18 @@ Done when, live against the running stack:
 - `POST /builds` (scope `builder:build`) — `{name, description, task, role, goal, backstory}` →
   constructs a single-agent CrewAI `Crew` (LLM via `llm-gateway`, one tool via `agent-gateway`),
   runs `kickoff()`, builds + signs + publishes an Agent Card, queries Eval Registry for matching
-  baseline suites, persists the outcome. Returns `{build_id, agent_card, kickoff_result,
-  eval_suites}`.
+  baseline suites, persists the outcome. Returns `{build_id, name, description, kickoff_result,
+  tool_was_called, agent_card_id, eval_suites, created_at}` — `agent_card_id` (not the full card
+  body) is enough to prove and later fetch the publish; the full card is available back from
+  `agent-registry` itself.
 - `GET /builds` (any authenticated caller) — list past builds.
 - `GET /builds/{id}` (any authenticated caller) — one build's full record.
 
 ## Storage
 
-Postgres `builder`: `builds` table (id, requester, name, description, task, kickoff_result,
-agent_card_id, eval_suite_names JSONB, created_at). No object storage needed for v1 — build
-requests and their outputs are small enough for Postgres columns directly.
+Postgres `builder`: `builds` table (id, requester, name, description, task, kickoff_raw_output,
+tool_was_called, agent_card_id, eval_suite_names JSON, created_at). No object storage needed for
+v1 — build requests and their outputs are small enough for Postgres columns directly.
 
 ## Build order (dependency-ordered)
 
@@ -152,14 +160,15 @@ requests and their outputs are small enough for Postgres columns directly.
 
 *(updated live with real findings during build)*
 
-- CrewAI's `kickoff()` duration is bounded by the LLM's own response time (this platform's local
-  Ollama model, already observed to be several seconds per call) — worth confirming a
-  single-agent, single-tool-call kickoff completes in a reasonable window for a synchronous HTTP
-  request, not something that needs to become async/polling for v1.
-- The custom `BaseTool`'s synchronous `_run()` needs its own token for `agent-gateway` — since
-  CrewAI's execution is fully synchronous (no `async`/`await` in the tool-call path), this can't
-  reuse `platform_core.llm_gateway_auth.TokenClient` (an async class) directly inside `_run()`;
-  needs a plain synchronous token fetch, decided during build.
+- CrewAI's `kickoff()` duration, confirmed live: a single-agent, single-tool-call kickoff against
+  this platform's local Ollama model via `llm-gateway` completes in well under the synchronous
+  HTTP request's timeout — no need for async/polling in v1.
+- The custom `BaseTool`'s synchronous `_run()` needed its own token for `agent-gateway`, since
+  CrewAI's execution is fully synchronous (no `async`/`await` in the tool-call path) and can't
+  reuse `platform_core.llm_gateway_auth.TokenClient` (an async class) directly inside `_run()` —
+  resolved with `sync_token.SyncTokenClient`, a plain-synchronous mirror of the same
+  fetch-cache/force-refresh shape, with its own reactive 401-retry in `AgentGatewayTool._run()`
+  (stub-tested against a fake agent-gateway that rejects the first token).
 - Whether any eval suites in the live registry actually have an `applies_to` tag matching this
   harness's built agents is untested — criterion 4 only requires the *query* to happen correctly,
   not that results are non-empty, since Eval Registry doesn't yet have a real production catalog.

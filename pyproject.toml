@@ -7,6 +7,26 @@ dependencies = []
 
 [tool.uv]
 package = false
+# guardrails-service's llm-guard==0.3.15 exact-pins json-repair<0.29 and regex==2024.7.24;
+# agent-builder-service's crewai>=1.15 needs json-repair~=0.60.1 and regex~=2026.1.15 — no
+# version of crewai (checked its whole release history) declares a range overlapping
+# llm-guard's pins, so a single joint resolution is otherwise unsatisfiable. Both packages are
+# mature, stable stdlib-adjacent libraries (regex is a drop-in re replacement; json-repair's
+# public API is a single repair_json() function) — overriding llm-guard's overly narrow pin to
+# crewai's newer range is the same class of fix as D-052's `transformers<5`, just in the other
+# direction. Verified guardrails-service's own test suite (its llm_guard_layer tests
+# specifically) still passes against the overridden versions before relying on this — D-075.
+# crewai also narrowly pins mcp~=1.28.1, which drags the whole workspace's `mcp` down from
+# 2.1.1 (mcp-skills-demo's own tests are written against 2.1.1's API) — this harness never
+# exercises crewai's own MCP support (D-072: tool access goes through agent-gateway's REST API,
+# not crewai-tools' MCPServerAdapter), so pinning `mcp` to what mcp-skills-demo already needs is
+# safe from crewai's side; verified by re-running mcp-skills-demo's own tests + pyright against
+# the override before relying on it.
+override-dependencies = [
+    "json-repair>=0.60.1,<0.61.0",
+    "regex>=2026.1.15,<2026.2.0",
+    "mcp>=2.1.1,<3",
+]
 
 [tool.uv.workspace]
 members = ["packages/*", "services/*"]

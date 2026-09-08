@@ -45,6 +45,7 @@ GUARDRAILS_URL = os.getenv("PLATFORM_TEST_GUARDRAILS_URL", "http://localhost:809
 LLM_GATEWAY_URL = os.getenv("PLATFORM_TEST_LLM_GATEWAY_URL", "http://localhost:8099")
 MEM0_URL = os.getenv("PLATFORM_TEST_MEM0_URL", "http://localhost:8100")
 KNOWLEDGE_URL = os.getenv("PLATFORM_TEST_KNOWLEDGE_URL", "http://localhost:8101")
+AGENT_BUILDER_URL = os.getenv("PLATFORM_TEST_AGENT_BUILDER_URL", "http://localhost:8102")
 MINIO_ENDPOINT = os.getenv("PLATFORM_TEST_MINIO_ENDPOINT", "localhost:9090")
 
 
@@ -308,6 +309,19 @@ def platform_knowledge_url() -> str:
             "llm --profile knowledge up -d)"
         )
     return KNOWLEDGE_URL
+
+
+@pytest.fixture
+def platform_agent_builder_url() -> str:
+    host, _, port = AGENT_BUILDER_URL.replace("http://", "").replace("https://", "").partition(":")
+    if not _reachable(host or "localhost", int(port or "8102")):
+        pytest.skip(
+            "agent-builder-service not reachable on "
+            f"{AGENT_BUILDER_URL} (start the stack: "
+            "docker compose --profile core --profile identity --profile registry --profile "
+            "gateway --profile llm --profile builder up -d)"
+        )
+    return AGENT_BUILDER_URL
 
 
 @pytest.fixture
