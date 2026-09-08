@@ -173,9 +173,29 @@ dependencies. Phase 0 is the concrete gate before any harness is built.
   `main`.** See
   [superpowers/specs/2026-08-31-guardrails-harness-design.md](superpowers/specs/2026-08-31-guardrails-harness-design.md)
   and decisions D-051..D-053.
-- Remaining Wave 3 harnesses: Memory, Knowledge/RAG — no longer blocked now that LLM Gateway
-  (Wave 1) is built; both typically need an LLM for extraction/generation/embeddings, which now
-  has a real (local) backend to call.
+- **Memory** (Mem0) — built and verified end to end (all 6 done-when criteria confirmed live: a
+  real conversation produces genuinely extracted facts — not echoed input — via a real LLM call
+  through `llm-gateway`; a semantic search using different wording than the stored fact still
+  retrieves it, proving real pgvector + FastEmbed similarity search, not keyword matching; the
+  `vector` extension and Mem0's own table are visible directly in Postgres; zero outbound
+  telemetry calls across every test in this build; scope enforcement — write vs. read — confirmed
+  live). Vector store is pgvector on the shared Postgres (image swapped to
+  `pgvector/pgvector:pg16`, verified against the whole running stack before building anything on
+  top of it) rather than a second Qdrant container; embedder is FastEmbed (local ONNX, in the
+  service container) rather than Ollama, avoiding a second unverifiable host dependency on top of
+  LLM Gateway's. `mem0-service` is also the first harness where a platform service calls
+  *another* platform service as an authenticated caller, holding its own registered OAuth2
+  client rather than a borrowed D-030 simulated principal. One real bug found and fixed live: the
+  token client's first version (proactive-only refresh) failed a real request after 6+ minutes
+  idle — Docker Desktop can suspend/throttle its VM's clock during host idle periods, so the
+  container's own clock under-detected a token that was genuinely expired by wall-clock time.
+  Fixed with a reactive retry-on-auth-failure backstop, re-verified live against the identical
+  failing scenario. **Merged to `main`.** See
+  [superpowers/specs/2026-09-08-memory-harness-design.md](superpowers/specs/2026-09-08-memory-harness-design.md)
+  and decisions D-059..D-063.
+- Remaining Wave 3 harness: Knowledge/RAG — no longer blocked now that LLM Gateway (Wave 1) is
+  built, and can reuse the same pgvector-on-shared-Postgres and llm-gateway-calling patterns
+  Memory just established.
 
 | Area | State |
 |---|---|
