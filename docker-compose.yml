@@ -631,6 +631,52 @@ services:
       llm-gateway:
         condition: service_started
 
+  # Knowledge/RAG (Wave 3, D-064..D-068) — retrieval-augmented generation: pgvector hybrid search
+  # (dense + Postgres full-text, D-065 — not a separate BM25 index), FastEmbed's own cross-encoder
+  # reranker (D-066 — not FlagEmbedding's multi-GB torch/transformers stack), generation via
+  # llm-gateway, provenance (which document backed the answer), and a minimal real permission
+  # model (D-068 — shared/private + ingested_by, actually enforced on query). Same
+  # service-calls-service auth shape as mem0-service (D-062/D-067) — its own real OAuth2 client,
+  # not a borrowed simulated principal.
+  knowledge-service:
+    profiles: ["knowledge"]
+    security_opt:
+      - seccomp:unconfined
+    build:
+      context: .
+      dockerfile: services/knowledge-service/Dockerfile
+    environment:
+      SERVICE_NAME: knowledge-service
+      ENV: dev
+      DATABASE_URL: postgresql+asyncpg://platform:platform@postgres:5432/knowledge
+      OAUTH2_JWKS_URL: http://identity-service:8000/.well-known/jwks.json
+      PG_HOST: postgres
+      PG_PORT: "5432"
+      PG_USER: platform
+      PG_PASSWORD: platform
+      PG_DBNAME: knowledge
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: minio
+      MINIO_SECRET_KEY: miniosecret123
+      MINIO_BUCKET: knowledge
+      LLM_GATEWAY_URL: http://llm-gateway:8000
+      IDENTITY_URL: http://identity-service:8000
+      KNOWLEDGE_CLIENT_SECRET: ${KNOWLEDGE_CLIENT_SECRET:-knowledge-service-dev-secret}
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+    ports:
+      - "8101:8000" # /documents, /query — published for skip-if-down tests
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      otel-collector:
+        condition: service_started
+      identity-service:
+        condition: service_started
+      llm-gateway:
+        condition: service_started
+
   spire-server:
     image: ghcr.io/spiffe/spire-server:1.15.1
     container_name: spire-server # referenced by name from spire-bootstrap's `docker exec`

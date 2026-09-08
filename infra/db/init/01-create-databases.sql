@@ -36,3 +36,7 @@ CREATE DATABASE litellm OWNER platform;
 -- the `vector` extension (needs the pgvector/pgvector:pg16 image, not plain postgres:16, D-060).
 CREATE DATABASE memory OWNER platform;
 CREATE DATABASE memory_test OWNER platform;
+-- LlamaIndex's PGVectorStore manages its own chunk/embedding table here; this service also owns
+-- a small `documents` metadata table directly (Alembic-managed).
+CREATE DATABASE knowledge OWNER platform;
+CREATE DATABASE knowledge_test OWNER platform;

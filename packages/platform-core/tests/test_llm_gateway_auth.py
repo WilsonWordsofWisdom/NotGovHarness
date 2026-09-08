@@ -10,7 +10,8 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
-from mem0_service.llm_gateway_client import TokenClient
+
+from platform_core.llm_gateway_auth import TokenClient, call_with_auth_retry
 
 
 @pytest.fixture
@@ -82,3 +83,55 @@ async def test_force_refresh_bypasses_a_still_fresh_cache(stub_identity):
     t2 = await client.force_refresh()
     assert t2 != t1
     assert state["issued"] == 2
+
+
+async def test_call_with_auth_retry_succeeds_on_the_first_try_when_nothing_is_wrong(
+    stub_identity,
+):
+    base_url, state = stub_identity
+    client = TokenClient(identity_url=base_url, client_id="mem0-service", client_secret="x")
+    applied: list[str] = []
+
+    result = await call_with_auth_retry(client, applied.append, lambda: _ok("done"))
+
+    assert result == "done"
+    assert state["issued"] == 1
+    assert applied == ["token-1"]
+
+
+async def test_call_with_auth_retry_recovers_from_an_auth_shaped_failure(stub_identity):
+    """The exact scenario D-063 found live: the proactive check thinks the cached token is fine,
+    but the actual call fails with an auth-shaped error anyway (e.g. wall-clock expiry the
+    process's own monotonic clock didn't detect). One retry, with a force-refreshed token, must
+    save it."""
+    base_url, state = stub_identity
+    client = TokenClient(identity_url=base_url, client_id="mem0-service", client_secret="x")
+    applied: list[str] = []
+    attempts = {"count": 0}
+
+    async def flaky_call() -> str:
+        attempts["count"] += 1
+        if attempts["count"] == 1:
+            raise RuntimeError("Error code: 401 - {'error': {'message': 'Signature has expired'}}")
+        return "recovered"
+
+    result = await call_with_auth_retry(client, applied.append, flaky_call)
+
+    assert result == "recovered"
+    assert state["issued"] == 2  # the initial fetch, then one force_refresh
+    assert applied == ["token-1", "token-2"]
+
+
+async def test_call_with_auth_retry_raises_a_non_auth_failure_immediately(stub_identity):
+    base_url, _state = stub_identity
+    client = TokenClient(identity_url=base_url, client_id="mem0-service", client_secret="x")
+
+    async def always_fails() -> str:
+        raise ValueError("something unrelated to auth broke")
+
+    with pytest.raises(ValueError, match="unrelated to auth"):
+        await call_with_auth_retry(client, lambda _token: None, always_fails)
+
+
+async def _ok(value: str) -> str:
+    return value

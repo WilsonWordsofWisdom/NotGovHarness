@@ -1,7 +1,7 @@
 """mem0-service: durable agent memory via Mem0 (Wave 3 Memory harness).
 
 pgvector + FastEmbed + llm-gateway, per docs/superpowers/specs/2026-09-08-memory-harness-design.md
-and decisions D-059..D-062.
+and decisions D-059..D-063.
 """
 
 from __future__ import annotations
@@ -17,9 +17,9 @@ from platform_core.app import create_app
 from platform_core.auth import CallerIdentity, make_require_identity, require_scope
 from platform_core.db import Database, lifespan_hook
 from platform_core.errors import PlatformError
+from platform_core.llm_gateway_auth import TokenClient
 
 from .config import Settings
-from .llm_gateway_client import TokenClient
 from .mem0_layer import Mem0Layer
 
 
