@@ -1,12 +1,14 @@
 # Knowledge/RAG Harness — Design
 
-**Status:** design drafted, not yet built.
+**Status:** built and verified live — all 6 done-when criteria confirmed against the running
+stack, including two real TTL-boundary bugs found and fixed (D-069, distinct from Memory's
+D-063 despite an identical symptom).
 **Date:** 2026-09-08
 **Wave:** 3 (Runtime & Policy) — completes the wave
 **Branch:** `feat/wave3-knowledge-rag`
 
 Related: [../../architecture.md](../../architecture.md) ·
-[../../decisions.md](../../decisions.md) (D-064..D-068) ·
+[../../decisions.md](../../decisions.md) (D-064..D-069) ·
 [../../implementation-plan.md](../../implementation-plan.md) ·
 [2026-09-08-memory-harness-design.md](2026-09-08-memory-harness-design.md) (pgvector-on-shared-
 Postgres and `llm-gateway`-calling patterns this harness reuses directly)
@@ -20,7 +22,8 @@ Framework: LlamaIndex. Blocked on LLM Gateway since Wave 1; unblocked now.
 `llama-index-core` and its retrieval/rerank/vector-store integrations were installed and the
 actual retrieval pipeline proven live (against a real, throwaway pgvector database and the real
 running `llm-gateway`) before designing anything, same discipline as every prior harness. Four
-real findings (D-064..D-067):
+real findings before writing any code (D-064..D-067), plus one more found only once the service
+was actually running for real (D-069, below):
 
 - No default telemetry in `llama-index-core` — checked, not assumed, same class of check that
   failed for the last two libraries (Guardrails AI, Mem0), passed this time.
@@ -145,3 +148,22 @@ Done when, live against the running stack:
 - FastEmbed's reranker model (`Xenova/ms-marco-MiniLM-L-6-v2`) needs the same "pre-warm at
   startup, not first request" treatment as every other local-model dependency in this repo
   (Sandbox's image, Guardrails' spaCy model, Memory's embedder).
+- **Real bug found live (D-069), a second and different TTL-boundary failure than Memory's
+  (D-063)**: mutating `llm.api_key` before every call (the same pattern that works for Mem0)
+  silently did nothing once `llama_index.llms.openai.OpenAI`'s cached `SyncOpenAI` client (built
+  once, `reuse_client=True` by default) was already constructed — every request past the real
+  300-second TTL failed with `"Signature has expired"`, and the reactive retry couldn't save it
+  either, since it retries against that same stale cached client. Root cause is different from
+  D-063's clock drift: Mem0 mutates the *underlying* `openai.OpenAI` client's own attribute
+  directly (read fresh per request, verified in D-062); this harness mutated the *wrapper's*
+  field, one layer higher, which doesn't propagate through the cache. Fixed with
+  `reuse_client=False`. Verified live, the same two-step way as D-063: reproduced the failure
+  past a real 300s wait, then confirmed the fix holds past another one.
+- **Real mistake found by the test suite, not by inspection**: D-068's visibility test needs two
+  distinct callers, and `alice` (an existing seeded client) looked like a convenient second one —
+  granting her `knowledge:write` broke `identity-service`'s own `test_token_exchange_against_
+  seeded_clients`, which hardcodes her scope as exactly `"upstream:call"` (she's specifically the
+  RFC 8693 delegation-demo subject). Fixed by seeding a genuinely new client (`bob`) instead of
+  reusing her — the same "different trust levels get separate identities" reasoning already
+  applied to Approvals/HITL's `reviewer` client, which should have been the default instinct here
+  too rather than reaching for whatever client already existed.

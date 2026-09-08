@@ -830,3 +830,27 @@ RBAC system (out of scope for a reference implementation) or silently dropping t
 core to the harness's own stated purpose, not a bolt-on tool), every document records who ingested
 it and a `visibility` of `shared` (default) or `private`; queries automatically exclude other
 callers' `private` documents. Minimal, but real and enforced, not aspirational.
+
+**D-069 — `OpenAILike`'s client-caching, not a clock-drift issue like D-063, silently broke
+token refresh a second, different way.** Following D-062/D-067's pattern, `RagLayer` mutated
+`llm.api_key` before every generation call, the same shape that worked for Mem0. It looked fine
+initially, then every request started failing with `"Signature has expired"` after the real
+300-second TTL passed — indistinguishable from D-063's symptom at first glance, but a genuinely
+different root cause. `llama_index.llms.openai.OpenAI._get_client()` builds its underlying
+`SyncOpenAI` client **once** and caches it (`reuse_client=True` is the default) — that cached
+client's `api_key` is fixed at the moment it's first built; mutating the wrapper's own
+`llm.api_key` field afterward does nothing to it. The reactive retry (D-063's fix, already
+present here) couldn't save this case either: it also just mutates `llm.api_key` and re-hits the
+exact same stale cached client, so every retry failed identically — this bug had **no recovery
+path** until fixed at the source, unlike D-063's, where the reactive backstop alone was
+sufficient. **Why Mem0 never hit this:** `Mem0Layer` mutates `memory.llm.client.api_key` — the
+*underlying* `openai.OpenAI` client's own attribute directly, which genuinely is read fresh per
+request (verified in D-062). `RagLayer` mutated the *wrapper's* field instead, one layer higher,
+which silently doesn't propagate through `reuse_client`'s caching. **Fix:** `reuse_client=False`
+on the `OpenAILike` construction — trades a fresh `SyncOpenAI` client per call for correctness,
+the right trade for a reference implementation. Verified live, the same way as D-063: reproduced
+the failure past a real 300-second wait, applied the fix, waited past the TTL again, confirmed a
+genuine grounded answer. **Why this is worth its own decision, not folded into D-063:** the same
+*symptom* ("signature has expired" after idle) can have unrelated causes depending on exactly
+which object in a third-party SDK's wrapper hierarchy gets mutated — worth checking the actual
+call path per-integration, not assuming a fix that worked once generalizes automatically.
