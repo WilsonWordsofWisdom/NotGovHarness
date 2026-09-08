@@ -854,3 +854,54 @@ genuine grounded answer. **Why this is worth its own decision, not folded into D
 *symptom* ("signature has expired" after idle) can have unrelated causes depending on exactly
 which object in a third-party SDK's wrapper hierarchy gets mutated — worth checking the actual
 call path per-integration, not assuming a fix that worked once generalizes automatically.
+
+---
+
+## 2026-09-08 — Agent Builder harness (Wave 4, first Wave 4 harness)
+
+D-054 already re-confirmed CrewAI as the framework. Before designing the harness itself,
+installed `crewai` + `crewai-tools` and read the actual execution path — same discipline as
+every prior harness, and specifically checking the two classes of bug D-063/D-069 already found
+twice in this platform (telemetry defaults, token-refresh-vs-client-caching) rather than assuming
+CrewAI is exempt.
+
+**D-070 — CrewAI's telemetry gate is a clean env var, checked before assuming so.**
+`CREWAI_DISABLE_TELEMETRY=true` (or `OTEL_SDK_DISABLED=true`) short-circuits
+`Telemetry.__init__` before any `TracerProvider`/span-processor is constructed — read the actual
+source, not inferred from the option's name. A `posthog` dependency is present but traced to
+`chromadb` (CrewAI's optional built-in memory backend, pulled in transitively) — not exercised
+here since this harness doesn't enable CrewAI's own memory (this platform already has Memory and
+Knowledge/RAG harnesses; enabling CrewAI's redundant built-in ones would duplicate D-013's own
+"Mem0 is not RAG, and this platform already built both" reasoning one level up).
+
+**D-071 — CrewAI's `LLM` calls `litellm.completion()` fresh per request, unlike D-069's
+`OpenAILike` — verified before assuming it's safe by resemblance to a prior fix.** Read
+`crewai.llm.LLM.call`'s actual source: `litellm.completion(**params)` is a stateless function
+call with `api_key=self.api_key` passed as a plain argument every single invocation — no cached
+`SyncOpenAI`-style client object anywhere in the path, unlike D-069's `OpenAILike`. This means
+the same `TokenClient` + mutate-`api_key`-before-each-call pattern that broke for Knowledge/RAG
+should work correctly here for the *opposite* reason Mem0's worked (Mem0 mutates the underlying
+client directly; here there is no persistent client to go stale) — still verified live against a
+real TTL boundary during build, not trusted on code-reading alone, since D-069 is exactly the
+lesson that a resemblance to a working fix isn't proof.
+
+**D-072 — Tool access goes through `agent-gateway`'s REST API, not a raw MCP client connection.**
+`crewai-tools` ships `MCPServerAdapter`, a direct MCP-protocol client — using it would connect
+straight to ContextForge (or an MCP server behind it), bypassing this platform's own identity and
+scope model entirely, exactly the seam D-043 built `agent-gateway` to close for every other
+caller. Instead, this harness's crew gets a small custom `crewai.tools.BaseTool` subclass that
+calls `agent-gateway`'s existing `POST /tools/{name}/call` — the same REST surface any other
+authenticated caller uses, reusing the already-live `mcp-skills-demo` tool federated through
+Agent Gateway (Wave 3) rather than standing up new infrastructure.
+
+**D-073 — `agent-builder-service` gets its own real OAuth2 client; `example-service`'s
+pre-emptive `agentcard:sign`/`registry:publish` grants stay untouched.** Those two scopes were
+granted to `example-service` specifically as a stand-in for "the not-yet-built Agent Builder"
+(D-030). Now that Agent Builder is real, the correct move by D-062's pattern is a genuine new
+identity for it — but checked first, learning from D-069's sibling `alice` regression, whether
+anything *already* depends on `example-service` holding those scopes: Agent Registry's own
+`test_live_stack.py` uses exactly that client/scope pair to sign and publish its test card.
+Revoking them would have broken an already-passing, unrelated test the same way reusing `alice`
+did for Knowledge/RAG — so they stay, and `agent-builder-service` is seeded as a fully separate
+client instead, with its own `agentcard:sign`, `registry:publish`, `llm_gateway:call`, and
+`agent_gateway:call` grants.
