@@ -691,3 +691,61 @@ mismatch D-043 found with ContextForge. A thin façade service validates this pl
 bearer tokens (`require_scope("llm_gateway:call")`) and forwards to LiteLLM using a backend-only
 virtual key the façade holds, never exposed to callers — consistent with every other integrated
 OSS service in this repo, not a new pattern invented for this harness.
+
+---
+
+## 2026-09-08 — Memory harness (Wave 3)
+
+Researched `mem0ai` by installing and reading it before designing anything, same discipline as
+D-050/D-051.
+
+**D-059 — Mem0's telemetry defaults to enabled (PostHog analytics + a separate GitHub-hosted
+"notices" fetch nagging OSS users toward Mem0's paid hosted platform), but the fix is a clean env
+var, not a Guardrails-style trap.** `MEM0_TELEMETRY` (default `"True"`) is read once into a plain
+module-level constant (`mem0.memory.telemetry.MEM0_TELEMETRY`) and checked directly everywhere it
+matters — `AnonymousTelemetry.__init__` leaves `self.posthog = None` when it's falsy, and
+`display_first_run_notice` (the function that triggers the remote notices fetch from
+`raw.githubusercontent.com/mem0ai/mem0`) returns on its very first line if telemetry is off,
+before ever reaching the network call. Verified live: constructing `AnonymousTelemetry()` with
+`MEM0_TELEMETRY=false` set gives `posthog is None`. **Unlike D-051's first attempt**, there is no
+runtime object here that gets silently reloaded from disk and reset — this is a one-time
+env-var read, so setting it in the service's own environment is sufficient and was verified as
+sufficient, not just assumed to be because it looked like the same shape of fix.
+
+**D-060 — Memory's vector store is pgvector on the shared Postgres, not a separate Qdrant
+container.** `mem0`'s pgvector backend is a first-class, fully-implemented module (not a stub),
+and `pgvector/pgvector:pg16` — confirmed real and pullable — is a drop-in-compatible image for
+the `postgres:16` this whole platform already shares. Swapping the shared container's image adds
+the extension to every existing database without touching any of them (nothing uses it unless it
+runs `CREATE EXTENSION vector`); Memory's own db-per-service database is the first and only one
+that does, for now. **Why not Qdrant:** would be a second, purpose-built vector engine for a
+capability pgvector already covers adequately at this platform's scale — same "don't add new
+infra when reusing existing infra covers it" reasoning applied throughout this repo.
+
+**D-061 — Memory's embedder is FastEmbed (local ONNX, in-container), not Ollama.** Mem0 supports
+an Ollama embedder, but that would make Memory depend on the host's Ollama having an
+embedding-capable model pulled — an extra prerequisite on top of the chat model LLM Gateway
+already needs, and one this repo can't verify is met (Ollama's own uptime already proved
+unreliable across this session). FastEmbed runs a small ONNX embedding model
+(`BAAI/bge-small-en-v1.5`, ~130MB, not Mem0's much larger default `thenlper/gte-large`) entirely
+inside the `mem0-service` container — no host dependency, no network call at embed time, same
+"pre-warm at build time, not first request" lesson as Sandbox's base image and Guardrails' spaCy
+model. LLM extraction still routes through `llm-gateway` (Mem0's `openai` provider, pointed at
+its `base_url` via config, same OpenAI-compatible surface everything else already uses) — Memory
+does not become a second path to a model.
+
+**D-062 — First platform-service-calls-platform-service auth: a real OAuth2 client + a
+fetch-cache-refresh token client, not a borrowed D-030 principal.** Every prior harness was
+either called by an external caller (D-030's simulated-principal pattern, standing in for the
+not-yet-built Agent Runtime) or itself called out to an external OSS tool using that tool's own
+auth (D-043's façade pattern). `mem0-service` calling `llm-gateway` is neither — it's this
+platform's own identity plane authenticating one of its own services to another. Checked
+identity-service's token TTL before assuming a one-time fetch would work
+(`access_token_ttl_seconds = 300`, five minutes) — confirms a startup-only fetch would silently
+start failing mid-session. **Decision:** `mem0-service` gets its own registered OAuth2 client
+(not `example-service` reused — it isn't simulating a future external caller, it's a real
+service), and a small `LlmGatewayClient` reusing `ContextForgeClient`'s fetch-cache-refresh shape
+(D-046), proactively refreshing before the short TTL expires rather than only reactively on 401.
+**Why this is worth naming as its own decision:** Knowledge/RAG will need the same shape of call
+into `llm-gateway` for embeddings/generation — this establishes the pattern once rather than each
+future harness re-deriving it.
