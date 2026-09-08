@@ -1,12 +1,14 @@
 # Memory Harness — Design
 
-**Status:** design drafted, not yet built.
+**Status:** built and verified live — all 6 done-when criteria confirmed against the running
+stack, including the TTL-refresh proof (criterion 2), which failed on first attempt and required
+a real fix (D-063), not just a passing-looking design.
 **Date:** 2026-09-08
 **Wave:** 3 (Runtime & Policy)
 **Branch:** `feat/wave3-memory`
 
 Related: [../../architecture.md](../../architecture.md) ·
-[../../decisions.md](../../decisions.md) (D-059..D-062) ·
+[../../decisions.md](../../decisions.md) (D-059..D-063) ·
 [../../implementation-plan.md](../../implementation-plan.md) ·
 [2026-09-01-llm-gateway-harness-design.md](2026-09-01-llm-gateway-harness-design.md) (the LLM
 surface this harness calls into)
@@ -75,11 +77,12 @@ Done when, live against the running stack:
 - **`services/mem0-service/`** — new greenfield service, Postgres `memory` DB (+ `memory_test`),
   one Alembic migration whose only job is `CREATE EXTENSION IF NOT EXISTS vector` — no
   application-owned tables; Mem0's own pgvector backend manages its schema in the same database.
-- **`LlmGatewayClient`** — a small fetch-cache-refresh token client for calling `llm-gateway`,
-  same shape as `ContextForgeClient` (D-046): fetches a client-credentials token from
-  identity-service, caches it, refreshes proactively before the 5-minute TTL expires (not just
-  reactively on 401 — a 300-second TTL is short enough that reactive-only retry would fail
-  requests unnecessarily often).
+- **`TokenClient`** — a small fetch-cache-refresh token client for calling `llm-gateway`, same
+  shape as `ContextForgeClient` (D-046): fetches a client-credentials token from identity-service,
+  caches it, refreshes proactively before the 5-minute TTL expires, *and* reactively on an
+  auth-shaped failure (`force_refresh()` + one retry) — the reactive half turned out to be load-
+  bearing, not a backstop-in-name-only: proactive-only refresh failed a real request after a
+  Docker Desktop VM clock drift (D-063).
 - **`mem0-service`'s own OAuth2 client** — registered in identity-service (new, not
   `example-service` reused) with scope `llm_gateway:call` — this is a platform service calling
   another platform service, not a simulated future external caller, so it gets its own identity
@@ -111,20 +114,20 @@ but doesn't own the tables of.
 2. `services/mem0-service/` scaffold + the extension-only migration.
 3. identity-service migrations: new `mem0-service` OAuth2 client (`llm_gateway:call`);
    `memory:write` → example-service.
-4. `LlmGatewayClient` (fetch-cache-refresh) — unit-tested against a stub identity-service the
+4. `TokenClient` (fetch-cache-refresh) — unit-tested against a stub identity-service the
    same way `ContextForgeClient` was (D-046's stub-server pattern).
 5. `mem0_layer.py`: Mem0 `Memory` instance wired to pgvector + FastEmbed + the `openai` provider
-   pointed at `llm-gateway` via `LlmGatewayClient`-supplied tokens, `MEM0_TELEMETRY=false` set
+   pointed at `llm-gateway` via `TokenClient`-supplied tokens, `MEM0_TELEMETRY=false` set
    before Mem0 is ever imported.
 6. `main.py`: the three endpoints, hybrid `auth_mode` + `require_scope`.
 7. Live verification: all 6 done-when criteria against the running stack, including the
    TTL-refresh proof (criterion 2) and the semantic-search proof (criterion 3).
-8. Committed `pytest`: `LlmGatewayClient` tested against a stub (no live dependency); live-stack
+8. Committed `pytest`: `TokenClient` tested against a stub (no live dependency); live-stack
    test for the full add→search→delete flow.
 
 ## Testing strategy
 
-- `LlmGatewayClient` tested against a stub identity-service server (real HTTP, fake responses) —
+- `TokenClient` tested against a stub identity-service server (real HTTP, fake responses) —
   same shape as `test_contextforge_client.py` — proves the refresh logic without needing a live
   300-second wait in the normal test run.
 - Live-stack test: real identity-service tokens (both `memory:write` and the internal
@@ -141,9 +144,19 @@ but doesn't own the tables of.
 - The Postgres image swap is the riskiest single step here — it changes shared infrastructure
   every other harness depends on. Verified against the full stack before considered done, not
   just Memory's own tests.
-- `LlmGatewayClient`'s refresh timing (proactive vs reactive) needs to actually be exercised, not
-  just coded — a 300-second TTL is short enough that this will get real exercise quickly during
-  any live testing session, unlike a longer-lived token that might hide a bug for a while.
+- **Real bug found live (D-063)**: the first version of this design shipped proactive-only
+  refresh, reasoning that a 300s TTL was short enough to get real exercise quickly. It got that
+  exercise immediately — and failed. A `POST /memories` call made after 6+ real minutes idle was
+  rejected with `"Signature has expired"` even though `TokenClient`'s own `time.monotonic()`-based
+  check found nothing wrong. Root cause: Docker Desktop can suspend/throttle its Linux VM's clock
+  during host idle periods, so the container's monotonic clock advanced by less than real
+  wall-clock time — the token was genuinely expired by the wall-clock time identity-service's JWT
+  verification checks, while the proactive check's own clock still thought it had margin left.
+  Fixed with a reactive backstop (`TokenClient.force_refresh()` + `Mem0Layer._call_with_auth_retry`,
+  same shape as `ContextForgeClient`'s retry-on-401, D-046) — re-verified live, twice: reproduced
+  the failure first (confirming it was real), then confirmed the fix saves the exact same
+  scenario. This is the one criterion in this harness's done-when list that a design document
+  alone could not have proven — it needed the real 300-second wait.
 - FastEmbed's model download (`BAAI/bge-small-en-v1.5`) happens on first use — pre-warmed at
   container startup via a lifespan hook, same lesson as Sandbox's image pull and Guardrails' spaCy
   model, not left to the first live request.

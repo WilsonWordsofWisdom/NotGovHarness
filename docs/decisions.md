@@ -744,8 +744,30 @@ identity-service's token TTL before assuming a one-time fetch would work
 (`access_token_ttl_seconds = 300`, five minutes) — confirms a startup-only fetch would silently
 start failing mid-session. **Decision:** `mem0-service` gets its own registered OAuth2 client
 (not `example-service` reused — it isn't simulating a future external caller, it's a real
-service), and a small `LlmGatewayClient` reusing `ContextForgeClient`'s fetch-cache-refresh shape
-(D-046), proactively refreshing before the short TTL expires rather than only reactively on 401.
-**Why this is worth naming as its own decision:** Knowledge/RAG will need the same shape of call
-into `llm-gateway` for embeddings/generation — this establishes the pattern once rather than each
-future harness re-deriving it.
+service), and a small `TokenClient` reusing `ContextForgeClient`'s fetch-cache-refresh shape
+(D-046), proactively refreshing before the short TTL expires. **Why this is worth naming as its
+own decision:** Knowledge/RAG will need the same shape of call into `llm-gateway` for
+embeddings/generation — this establishes the pattern once rather than each future harness
+re-deriving it. **Update, see D-063: proactive refresh alone turned out not to be enough.**
+
+**D-063 — Proactive token refresh alone wasn't sufficient; a reactive retry-on-auth-failure
+backstop was a real, live-discovered requirement, not a nice-to-have.** D-062's `TokenClient`
+tracked expiry via `time.monotonic()` against a cached `expires_in`, refreshing 30s before that
+deadline — this looked correct in an isolated unit check (manually advancing the clock forward
+and confirming a refetch). It failed for real: a `POST /memories` call made after the service sat
+idle for 6+ real minutes was rejected with `"Signature has expired"`, even though the proactive
+check found nothing wrong. Root cause: Docker Desktop can suspend or throttle its Linux VM's
+clock during host idle periods, so `time.monotonic()` inside a container can advance by
+noticeably less than real wall-clock time — the token was genuinely expired by the wall-clock
+time identity-service's JWT verification checks, while the container's own clock still thought it
+had a comfortable margin left. **Fix:** `TokenClient.force_refresh()` (bypasses the cache
+unconditionally) plus `Mem0Layer._call_with_auth_retry()`, which applies the proactively-refreshed
+token first, and on a failure whose message matches an auth-failure shape (Mem0 wraps the
+underlying `openai` SDK's exception into its own generic one, losing the type but keeping
+`"401"`/`"unauthorized"`/`"Signature has expired"` in the text) force-refreshes and retries once —
+the same reactive shape `ContextForgeClient` already uses for a different reason (D-046's
+ContextForge-restart case). Verified live, twice: the exact failing scenario reproduced first
+(confirming the bug was real, not a fluke), then re-run after the fix and confirmed to succeed.
+**Why this matters beyond Memory:** any future service holding a cached, monotonic-clock-tracked
+token under Docker Desktop has the same exposure — the reactive backstop, not just the proactive
+check, is the part that actually matters under real (not idealized) conditions.

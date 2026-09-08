@@ -591,6 +591,46 @@ services:
       litellm:
         condition: service_healthy
 
+  # Memory (Wave 3, D-059..D-062) — durable agent memory via Mem0, pgvector on the shared
+  # Postgres (D-060, needs the pgvector/pgvector:pg16 image above) + FastEmbed's own in-container
+  # embedding model (D-061, no host Ollama dependency) + llm-gateway for fact extraction. The
+  # first harness where a platform service calls *another* platform service as an authenticated
+  # caller — mem0-service holds its own real OAuth2 client (not a borrowed simulated-principal),
+  # and its token to llm-gateway is proactively refreshed well inside identity-service's 5-minute
+  # token TTL (D-062).
+  mem0-service:
+    profiles: ["memory"]
+    security_opt:
+      - seccomp:unconfined
+    build:
+      context: .
+      dockerfile: services/mem0-service/Dockerfile
+    environment:
+      SERVICE_NAME: mem0-service
+      ENV: dev
+      DATABASE_URL: postgresql+asyncpg://platform:platform@postgres:5432/memory
+      OAUTH2_JWKS_URL: http://identity-service:8000/.well-known/jwks.json
+      PG_HOST: postgres
+      PG_PORT: "5432"
+      PG_USER: platform
+      PG_PASSWORD: platform
+      PG_DBNAME: memory
+      LLM_GATEWAY_URL: http://llm-gateway:8000
+      IDENTITY_URL: http://identity-service:8000
+      MEM0_CLIENT_SECRET: ${MEM0_CLIENT_SECRET:-mem0-service-dev-secret}
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+    ports:
+      - "8100:8000" # /memories — published for skip-if-down tests
+    depends_on:
+      postgres:
+        condition: service_healthy
+      otel-collector:
+        condition: service_started
+      identity-service:
+        condition: service_started
+      llm-gateway:
+        condition: service_started
+
   spire-server:
     image: ghcr.io/spiffe/spire-server:1.15.1
     container_name: spire-server # referenced by name from spire-bootstrap's `docker exec`

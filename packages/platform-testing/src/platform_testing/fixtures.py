@@ -43,6 +43,7 @@ APPROVALS_URL = os.getenv("PLATFORM_TEST_APPROVALS_URL", "http://localhost:8096"
 SANDBOX_URL = os.getenv("PLATFORM_TEST_SANDBOX_URL", "http://localhost:8097")
 GUARDRAILS_URL = os.getenv("PLATFORM_TEST_GUARDRAILS_URL", "http://localhost:8098")
 LLM_GATEWAY_URL = os.getenv("PLATFORM_TEST_LLM_GATEWAY_URL", "http://localhost:8099")
+MEM0_URL = os.getenv("PLATFORM_TEST_MEM0_URL", "http://localhost:8100")
 MINIO_ENDPOINT = os.getenv("PLATFORM_TEST_MINIO_ENDPOINT", "localhost:9090")
 
 
@@ -281,6 +282,18 @@ def platform_llm_gateway_url() -> str:
             "docker compose --profile core --profile identity --profile llm up -d)"
         )
     return LLM_GATEWAY_URL
+
+
+@pytest.fixture
+def platform_mem0_url() -> str:
+    host, _, port = MEM0_URL.replace("http://", "").replace("https://", "").partition(":")
+    if not _reachable(host or "localhost", int(port or "8100")):
+        pytest.skip(
+            "mem0-service not reachable on "
+            f"{MEM0_URL} (start the stack: "
+            "docker compose --profile core --profile identity --profile llm --profile memory up -d)"
+        )
+    return MEM0_URL
 
 
 @pytest.fixture
