@@ -17,7 +17,11 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock:ro
 
   postgres:
-    image: postgres:16
+    # pgvector/pgvector:pg16 (D-060) — drop-in for postgres:16, confirmed same PostgreSQL 16.15
+    # binary version before swapping (so the existing pgdata volume's on-disk format is
+    # unaffected); adds the `vector` extension available to any database that opts in via
+    # `CREATE EXTENSION vector`, which nothing does until Memory's own migration runs.
+    image: pgvector/pgvector:pg16
     profiles: ["core"]
     # Old Docker Engine (20.10.x) ships a seccomp profile that blocks syscalls (clone3, ...)
     # these modern images need. Relaxing seccomp is a local-dev workaround; the real fix is a

@@ -147,3 +147,12 @@ but doesn't own the tables of.
 - FastEmbed's model download (`BAAI/bge-small-en-v1.5`) happens on first use — pre-warmed at
   container startup via a lifespan hook, same lesson as Sandbox's image pull and Guardrails' spaCy
   model, not left to the first live request.
+- **Real finding**: swapping to `pgvector/pgvector:pg16` surfaced a glibc collation-library
+  version mismatch on every existing database (`WARNING: database "X" has a collation version
+  mismatch ... collation version 2.41 ... operating system provides version 2.36`) — the two
+  images are built on slightly different Debian point releases even though the PostgreSQL binary
+  version is identical (16.15 on both, confirmed before swapping). Non-breaking (queries returned
+  correct data throughout), but left uncorrected it would print on every connection indefinitely
+  and risks masking a real future issue in the noise. Fixed by running `ALTER DATABASE ... REFRESH
+  COLLATION VERSION` on every existing database — Postgres's own recommended fix, confirmed clean
+  afterward (no warning on a repeat query).
