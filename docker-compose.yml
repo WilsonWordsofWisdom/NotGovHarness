@@ -722,6 +722,44 @@ services:
       eval-registry:
         condition: service_started
 
+  # Evals Runner (Wave 4, D-077..D-081) — runs a published Eval Registry `cases` suite for real:
+  # llm-gateway is the system-under-test for v1 (D-077, no real A2A-callable agent exists yet),
+  # judged by real DeepEval and Ragas metrics also called through llm-gateway. Same
+  # service-calls-service auth shape as every prior harness — its own real OAuth2 client, not a
+  # borrowed simulated principal.
+  evals-runner-service:
+    profiles: ["evals"]
+    security_opt:
+      - seccomp:unconfined
+    build:
+      context: .
+      dockerfile: services/evals-runner-service/Dockerfile
+    environment:
+      SERVICE_NAME: evals-runner-service
+      ENV: dev
+      DATABASE_URL: postgresql+asyncpg://platform:platform@postgres:5432/evals
+      OAUTH2_JWKS_URL: http://identity-service:8000/.well-known/jwks.json
+      LLM_GATEWAY_URL: http://llm-gateway:8000
+      EVAL_REGISTRY_URL: http://eval-registry:8000
+      IDENTITY_URL: http://identity-service:8000
+      EVALS_CLIENT_SECRET: ${EVALS_CLIENT_SECRET:-evals-runner-service-dev-secret}
+      DEEPEVAL_TELEMETRY_OPT_OUT: "1"
+      RAGAS_DO_NOT_TRACK: "true"
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+    ports:
+      - "8103:8000" # /runs — published for skip-if-down tests
+    depends_on:
+      postgres:
+        condition: service_healthy
+      otel-collector:
+        condition: service_started
+      identity-service:
+        condition: service_started
+      llm-gateway:
+        condition: service_started
+      eval-registry:
+        condition: service_started
+
   spire-server:
     image: ghcr.io/spiffe/spire-server:1.15.1
     container_name: spire-server # referenced by name from spire-bootstrap's `docker exec`

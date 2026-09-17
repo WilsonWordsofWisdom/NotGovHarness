@@ -979,3 +979,164 @@ tests are written against — safe because crewai's own `mcp` usage is dead code
 harness's perspective. Verified by re-running mcp-skills-demo's full test suite (including its
 live-stack test against the real running container) and `pyright` on both services, plus the
 whole workspace's `ruff check .` / `pyright`, all clean, before trusting the override.
+
+**D-077 — Evals runner's system-under-test is a direct `llm-gateway` completion for v1, not a
+real A2A-driven agent — decided with the user after checking the platform actually has nothing to
+drive.** The implementation plan's original wording says this harness "drives agents via A2A."
+Checked before designing anything: `a2a-sdk` is declared as an Agent Registry dependency but
+never imported or used anywhere in this codebase — Agent Registry stores a Card's `url` field as
+an opaque string with no client behind it, and Agent Builder's own published cards carry a
+placeholder URI (`agent-builder-service://agents/{name}`) that resolves to nothing. No
+independently-callable A2A agent endpoint exists anywhere in this platform yet — that is what
+Deployment Pipeline would produce, and it was explicitly skipped in favor of building this
+harness next. Presented as a genuine fork to the user (direct `llm-gateway` completion vs.
+evaluating against `agent-builder-service`'s `/builds` vs. building a pluggable target
+abstraction with only one real backend behind it) rather than assumed silently; the user chose
+direct `llm-gateway` completion — exactly the `input` → `actual_output` shape DeepEval's and
+Ragas's own metrics already expect, honestly buildable and fully verifiable today. Real
+A2A-agent-driving is a documented non-goal, not a dropped requirement, for once Deployment
+Pipeline produces something real to point at.
+
+**D-078 — DeepEval's telemetry and its separate Confident AI cloud-upload path are both cleanly
+gated, verified from source; the high-level `evaluate()` wrapper is skipped anyway in favor of
+bare metric objects.** `DEEPEVAL_TELEMETRY_OPT_OUT=1` is a real, correctly-checked gate —
+`deepeval.telemetry.client.capture()` reads it and early-returns before touching PostHog, and
+`get_backend()` swaps in a `NoopBackend` when set. Separately, `evaluate()`'s own result-upload
+path (`TestRunManager.wrap_up_test_run` → `post_test_run`) is gated on `is_confident()`, which is
+literally `get_confident_api_key() is not None` — since `CONFIDENT_API_KEY` is never set here,
+that branch is provably unreachable, not just assumed unreachable. First library since
+llama-index (D-064) to pass this check cleanly on the first read, no trap. Regardless of the
+clean gating, `evaluate()` itself is skipped in this design in favor of instantiating metric
+objects (`GEval`, `AnswerRelevancyMetric`, `FaithfulnessMetric`) directly and calling
+`.a_measure()` per case — `evaluate()` is built for local/CLI use (console reports, local result
+files under `.deepeval/`, login-prompt nudges) that a server process has no use for. A small
+custom `DeepEvalBaseLLM` adapter points DeepEval's judge calls at `llm-gateway`, constructing its
+underlying client fresh on every call rather than caching it on the instance — sidestepping
+D-069's whole class of bug by construction instead of needing to reactively test for it per
+integration, the lesson D-069 itself named.
+
+**D-079 — a fresh `pip install ragas` is broken out of the box; ragas's own unpinned
+`langchain-community` dependency resolves to a release that breaks its unconditional import.**
+`import ragas` failed immediately: `ragas/llms/base.py` unconditionally imports
+`langchain_community.chat_models.vertexai.ChatVertexAI`, but PyPI's `ragas==0.4.3` declares
+`langchain-community` with **no version bound at all**, so a fresh install resolves to today's
+0.4.2 — a LangChain-1.0-generation release that moved `ChatVertexAI` out of that module entirely.
+Verified live: pinning `langchain-community<0.4` (resolves to 0.3.31) fixes the import cleanly.
+Will pin this explicitly in `evals-runner-service`'s `pyproject.toml` rather than leaving it to
+float, the same "don't trust an unpinned transitive dependency to stay compatible" lesson D-076
+just taught one layer up (a cross-service conflict there; ragas's own internal breakage here).
+Separately found ragas 0.4's metrics API mid-redesign: the old `ragas.metrics.<MetricName>`
+top-level imports are deprecated in favor of `ragas.metrics.collections`, paired with a new
+`llm_factory(model, provider="openai", client=<any OpenAI-compatible client>)` integration point
+— this is the non-deprecated path this design uses to point ragas's judge calls at `llm-gateway`.
+`RAGAS_DO_NOT_TRACK=true` is a real, verified-clean telemetry opt-out: `ragas/_analytics.py`'s
+`track()` checks `do_not_track()` and returns before ever calling its own first-party analytics
+endpoint (`t.explodinggradients.com`, not PostHog).
+
+**D-080 — Promptfoo and `redteam` suites are deferred from v1, not silently dropped.** Promptfoo
+is a Node.js CLI, not a Python library — adopting it means a second toolchain in an otherwise
+all-Python monorepo (already flagged as a risk in the implementation plan) for a job DeepEval and
+Ragas already cover the shape of; a real, separate follow-up if a concrete need for it surfaces,
+not bundled into this harness's first build. `redteam` suites (D-040: generation of adversarial
+inputs, not assertion against a fixed dataset) are a meaningfully different code path from
+`cases` suites — deferred for the same "one thing well, first" reasoning Agent Builder applied to
+multi-agent crews. `metric_id`/`engine: "custom"` is rejected outright with a clear 422 for v1,
+not treated as a silent no-op pass.
+
+**D-081 — a third crewai-vs-new-harness conflict, one dependency layer further down than D-075:
+deepeval's `posthog` pin vs. crewai's unused `chromadb` dependency's own `posthog` cap.**
+`uv sync --all-packages` failed the moment `evals-runner-service` was scaffolded:
+`deepeval>=4.2.0` needs `posthog>=7.0.0,<8.0.0`, but `crewai>=1.15.0` pulls in
+`chromadb>=1.1.0,<1.2.dev0` (for its own optional built-in memory backend, D-070 — dead code from
+agent-builder-service's perspective, since this platform's own Memory/Knowledge-RAG harnesses are
+used instead), and `chromadb` caps `posthog<6.0.0`. Same shape of fix as D-075/D-076: extended
+the workspace-root `override-dependencies` with `"posthog>=7.0.0,<8.0.0"`. Telemetry is disabled
+on both sides regardless (`CREWAI_DISABLE_TELEMETRY`, `DEEPEVAL_TELEMETRY_OPT_OUT`), so the
+version bump can't newly enable anything that was off — but verified anyway, not assumed: crewai,
+chromadb, and posthog all still import cleanly under the override, and agent-builder-service's
+own test suite still passes before trusting it. Three real cross-service dependency conflicts
+from one `crewai` install now (D-075, D-076, D-081) is itself worth noting as a pattern — a
+mature-but-heavy framework's own transitive tree is a real, recurring cost in a shared-lockfile
+workspace, not a one-off surprise.
+
+**D-082 — `llm-gateway`'s upstream client's default 30-second timeout genuinely isn't enough for
+every real completion; raised for this façade specifically, found live, not anticipated.** The
+first real `POST /runs` against a published suite failed with a 502 — `llm-gateway`'s own logs
+showed `httpx.ReadTimeout` on its call to LiteLLM: `platform_core.facade.UpstreamClient`'s
+30-second default (unchanged since Phase 0) was hit before the local Ollama model finished a
+structured judge prompt (DeepEval's `GEval` evaluation-steps generation, Ragas's
+`FactualCorrectness` claim decomposition). Every prior harness's calls through `llm-gateway`
+happened to be simple enough to finish well inside 30s; this is the first one making
+judge-shaped calls, which are longer and more numerous per request. Fixed by adding a
+`chat_completion_timeout` setting to `llm-gateway` itself (120s) and passing it to its
+`UpstreamClient` — scoped to this one façade, not `platform_core.facade`'s shared default, since
+nothing else in this platform has hit the ceiling yet. Verified by rebuilding and restarting the
+`llm-gateway` container and re-running the same request, which then succeeded.
+
+**D-083 — Ragas's `FactualCorrectness` needs a substantive reference, not a bare word or short
+phrase — a real finding about the metric's own design, not a bug in this harness's code.** The
+first live run scored *both* a correct case (`response="Paris"`, `reference="Paris"`, identical
+strings) and a deliberately-wrong one at exactly `0.0`, with `reason: null` on both — enough to
+suspect a bug. Traced into `FactualCorrectness.ascore()`'s own source rather than assumed broken:
+`reason` is simply never populated by this metric (its `MetricResult` is constructed with only
+`value` — not a bug, just this metric's normal shape). The `0.0` score, though, was real and
+reproducible: claim decomposition on the bare word "Paris" produces a claim like `"Paris is a
+city."`, and the metric's NLI verification then checks whether that claim can be *entailed from
+the reference text alone* — strict entailment, not general world-knowledge truth. A
+one-word reference ("Paris") contains no information to entail "is a city" from, so the verifier
+correctly (if unhelpfully, for this test data) said no, regardless of whether the underlying fact
+is true. Verified live: the identical metric scores `1.0` once both `response` and `reference`
+are full sentences (`"Paris is the capital of France."`) instead of bare words — confirming the
+fix is in the suite's dataset shape, not in `ragas_engine.py`. `evals-runner-smoke`'s goldens
+were rewritten accordingly before relying on this harness's live verification.
+
+**D-084 — the two autoraters occasionally disagree with each other on the same borderline case;
+the live-stack test now asserts real judgment happened, not unanimous agreement every run.**
+The committed live-stack test initially asserted every metric on the deliberately-wrong case
+failed (`all(...)`) — it failed on one run: `pass_count`/`fail_count` were still correct (1/1),
+but one of the two engines passed the wrong case while the other correctly failed it. Re-ran the
+identical suite manually straight after and got a clean result (both engines agreeing, every
+metric correct) — not a repeatable bug, genuine run-to-run judge variance on a small local model
+comparing two similarly-phrased sentences. This is an inherent property of LLM-as-judge
+evaluation, not something to chase out of the harness's code. Fixed the test, not the model:
+`all(...)` → `any(...)` on both directions — proving at least one real judge call correctly
+passed the correct case and at least one correctly failed the wrong case, which is what
+criterion 2 actually requires ("a case ... actually fails ... and a correct case actually
+passes"), not that every autorater agrees with every other autorater on every run.
+
+**D-085 — the judge/autorater model is independently configurable from the system-under-test
+model, requested by the user after v1 shipped; exposed through a self-hosted `/ui` matching the
+Skill Registry/Approvals shape.** Both engines' judge calls previously reused
+`settings.llm_gateway_model` unconditionally — the same value `POST /runs`'s pre-existing `model`
+field already let a caller override for the system-under-test, but with no equivalent knob for
+the judge. Added `judge_model` alongside `model` on `RunIn` (both default to
+`settings.llm_gateway_model`, so same-model-for-both, the common case, needs no change), threaded
+through `_run_metric` into `DeepEvalTargetModel` and `ragas_engine.run_metric`, and persisted on
+`Run` (migration `0002_judge_model`) so a stored run records which model actually judged it —
+necessary for spotting self-preference bias later, not just setting the knob. `GET /ui` (D-037's
+established shape: a static page under `services/evals-runner-service/static/`, mounted via
+`StaticFiles`, takes a bearer token in the browser, never a client secret) lets a caller submit a
+run with both models as plain text fields rather than only via raw `POST /runs` JSON — plain text
+inputs, not a fetched dropdown, since `llm-gateway` doesn't expose a models-list endpoint and only
+one model (`qwen3.8`) is configured in this reference deployment; building a model-catalog proxy
+for a one-model catalog would be premature.
+
+**D-086 — neither metric engine's judge calls actually had D-063's reactive-retry backstop; a
+long enough run's judging phase crossed the 300s TTL for real and proved it, caught by re-running
+the full test suite after D-085's change, not assumed still-fine.** `DeepEvalTargetModel.a_generate`
+and `ragas_engine._judge_client` both called `token_client.ensure_token()` directly — the same
+shape as `LlmGatewayTarget.complete`'s *proactive* half, but missing the reactive
+retry-on-auth-failure half `call_with_auth_retry` gives that one call. This gap had gone
+unnoticed through every earlier live verification in this build (D-071-style TTL proofs
+included) because those runs happened to stay under 300s; once a run's judging phase alone
+started taking 400s+ (confirmed real, not hypothetical, across several runs this build), a
+`POST /runs` genuinely failed with `401 - invalid token: Signature has expired` from inside a
+judge call — not a test artifact this time, a real gap in the service's own auth handling.
+Fixed at the one call site both engines share (`main.py`'s `_run_metric`, not inside either
+engine): on an auth-shaped failure, `force_refresh()` the shared `TokenClient` once and redo the
+whole metric dispatch — chosen over threading `call_with_auth_retry` into each engine
+individually because ragas's `Faithfulness`/`FactualCorrectness.ascore()` is a black box that can
+issue several internal LLM calls this code never sees individually, so there's no single
+per-call hook to wrap the way `LlmGatewayTarget` or DeepEval's own `a_generate` allow — redoing
+the whole metric once, the same "one retry is enough" scope D-063 established, is the shape that
+actually fits both engines uniformly.
