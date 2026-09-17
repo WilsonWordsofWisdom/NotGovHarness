@@ -8,7 +8,7 @@ for now, at explicit user direction)
 **Branch:** `feat/wave4-evals-runner`
 
 Related: [../../architecture.md](../../architecture.md) ·
-[../../decisions.md](../../decisions.md) (D-039..D-042, D-077..D-084) ·
+[../../decisions.md](../../decisions.md) (D-039..D-042, D-077..D-086) ·
 [../../implementation-plan.md](../../implementation-plan.md) ·
 [2026-08-30-eval-registry-harness-design.md](2026-08-30-eval-registry-harness-design.md)
 
@@ -97,6 +97,30 @@ Done when, live against the running stack:
   plan mentions this; v1 only grades fresh `llm-gateway` calls it makes itself. A real, separate
   follow-up once there's a concrete need to grade historical traces rather than fresh runs.
 
+## Follow-up feature requests (logged, not built here — 2026-09-18)
+
+Requested by the user after v1 was built and verified; each is a genuinely separate capability,
+not an incremental tweak, and would want its own design pass before building, matching every
+other harness's spec → plan → build discipline:
+
+1. **Auto-suggest goldens from the system-under-test.** An LLM drafts candidate `cases` goldens
+   (input/expected_output/context) by exercising the system-under-test, for a human to review and
+   confirm before they're published as a real suite — this is exactly the "LLM optionally
+   drafting scenario cases for human review" idea D-012 already named as a future capability, now
+   made concrete. Open questions for its own design pass: where does drafting live (a new
+   endpoint on this service, or a separate step before `eval-registry` publish?), what's the
+   human-review/confirm UX, and how does a drafted-but-unconfirmed golden avoid being mistaken
+   for a real one.
+2. **Auto-generate synthetic data once goldens are confirmed.** Given a small set of
+   human-confirmed goldens, generate additional synthetic variations (paraphrases, edge cases) to
+   expand a suite's dataset — a data-augmentation step downstream of (1). Needs its own design
+   pass on synthetic-data quality/diversity controls and how synthetic cases are distinguished
+   from human-authored ones in a published suite.
+3. **Independently configurable models across every phase** (golden generation, synthetic data
+   generation, autorater) — the same knob this build just added for the autorater/judge model
+   (and the pre-existing one for the system-under-test) should extend to whichever model drafts
+   goldens and whichever model generates synthetic data, once (1) and (2) exist.
+
 ## Components
 
 - **`services/evals-runner-service/`** — new greenfield service, Postgres `evals` DB
@@ -121,21 +145,28 @@ Done when, live against the running stack:
 
 ## API (evals-runner-service)
 
-- `POST /runs` (scope `evals:run`) — `{suite_name, suite_version?, model?}` → fetches the suite
-  (rejects anything but `kind: "cases"` with a clear 422 for v1) and its dataset, runs every
-  golden through `llm-gateway`, dispatches each of the suite's configured metrics by `engine`,
-  persists the outcome. Returns `{run_id, suite_name, suite_version, model, case_results,
-  pass_count, fail_count, created_at}`.
+- `POST /runs` (scope `evals:run`) — `{suite_name, suite_version?, model?, judge_model?}` →
+  fetches the suite (rejects anything but `kind: "cases"` with a clear 422 for v1) and its
+  dataset, runs every golden through `llm-gateway` as the system-under-test (`model`, default
+  `qwen3.8`), dispatches each of the suite's configured metrics by `engine` using `judge_model`
+  (default `qwen3.8`) as the autorater — independently configurable from `model`, so the two can
+  be pointed at different models when self-preference bias matters, even though it's fine for
+  them to be the same. Returns `{run_id, suite_name, suite_version, model, judge_model,
+  case_results, pass_count, fail_count, created_at}`.
 - `GET /runs` (any authenticated caller) — list past runs.
 - `GET /runs/{id}` (any authenticated caller) — one run's full per-case detail.
+- `GET /ui` — a self-hosted browse/submit web UI (same shape as Skill Registry's and
+  Approvals/HITL's `/ui`: a static page, takes a bearer token, never a client secret). Lets a
+  caller submit a run with the suite name/version and both models set as plain text fields, and
+  browse past runs with full per-case, per-metric detail (score, reason, pass/fail).
 
 ## Storage
 
-Postgres `evals`: `runs` table (id, requester, suite_name, suite_version, model, case_results
-JSON — each entry `{input, expected_output, actual_output, metrics: [{metric_id, engine, score,
-reason, passed}]}`, pass_count, fail_count, created_at). One table, matching Agent Builder's own
-`builds` — no separate per-case table for v1 unless a real need to query cases via SQL surfaces
-later.
+Postgres `evals`: `runs` table (id, requester, suite_name, suite_version, model, judge_model,
+case_results JSON — each entry `{input, expected_output, actual_output, metrics: [{metric_id,
+engine, score, reason, passed}]}`, pass_count, fail_count, created_at). One table, matching Agent
+Builder's own `builds` — no separate per-case table for v1 unless a real need to query cases via
+SQL surfaces later.
 
 ## Build order (dependency-ordered)
 
@@ -199,13 +230,22 @@ later.
   populates `reason` at all (confirmed from its own source, D-083) — that's normal for this
   metric, not a bug to chase.
 - The autorater/system-under-test model split is currently the same model (`qwen3.8`) for both —
-  a known self-preference-bias risk in LLM-as-judge setups. `POST /runs` already accepts a
-  `model` override for the system-under-test; the judge model is not yet independently
-  configurable in either engine. Flagged to the user as an open follow-up, not silently
-  resolved either way.
+  a known self-preference-bias risk in LLM-as-judge setups — resolved (D-085): `judge_model` is
+  now an independent field on `POST /runs` (defaulting to `model`'s same default,
+  `settings.llm_gateway_model`, so same-model-for-both needs no change), threaded through both
+  engines and persisted on the run, with a `GET /ui` page to set it without hand-writing JSON.
 - The two autoraters occasionally disagree with each other on the same borderline case — caught
   live when the committed live-stack test failed once, non-repeatably, with `pass_count`/
   `fail_count` still correct but one engine's verdict flipped on a closely-worded comparison
   (D-084). Inherent to LLM-as-judge evaluation on a small local model, not a bug; the test now
   asserts at least one real judge call reaches the correct verdict per case, not unanimous
   agreement every run.
+- Neither engine's judge calls had D-063's reactive-retry backstop — only `LlmGatewayTarget`
+  (the system-under-test leg) did. A run whose judging phase alone took 400s+ (confirmed real
+  across several runs, not hypothetical) crossed the 300s TTL *during* judging and got a real
+  401 from inside a judge call, caught by re-running the full test suite after D-085's change
+  (D-086). Fixed at the one call site both engines share (`main.py`'s `_run_metric`): retry the
+  whole metric once with a force-refreshed token on an auth-shaped failure, rather than inside
+  either engine individually — ragas's `.ascore()` is a black box that can issue several internal
+  LLM calls this code never sees one at a time, so there's no single per-call hook to wrap there
+  the way `LlmGatewayTarget`/DeepEval's own `a_generate` allow.

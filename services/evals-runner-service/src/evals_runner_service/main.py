@@ -6,9 +6,11 @@ D-077..D-080.
 from __future__ import annotations
 
 import uuid
+from pathlib import Path
 from typing import Any
 
 from fastapi import Depends, FastAPI
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -17,7 +19,7 @@ from platform_core.app import create_app
 from platform_core.auth import CallerIdentity, make_require_identity, require_scope
 from platform_core.db import Database, lifespan_hook, session_dependency
 from platform_core.errors import PlatformError
-from platform_core.llm_gateway_auth import TokenClient
+from platform_core.llm_gateway_auth import TokenClient, looks_like_auth_failure
 
 from .config import Settings
 from .eval_registry_client import EvalRegistryClient, EvalRegistryError, Golden
@@ -29,7 +31,11 @@ from .models import Run
 class RunIn(BaseModel):
     suite_name: str
     suite_version: str | None = None
+    # System-under-test and judge/autorater are independently configurable (it's fine for them
+    # to be the same model — this platform's only configured model, qwen3.8, is the default for
+    # both — but a self-preference-bias risk if they always are, so each is its own knob).
     model: str | None = None
+    judge_model: str | None = None
 
 
 def _run_out(row: Run) -> dict[str, Any]:
@@ -38,6 +44,7 @@ def _run_out(row: Run) -> dict[str, Any]:
         "suite_name": row.suite_name,
         "suite_version": row.suite_version,
         "model": row.model,
+        "judge_model": row.judge_model,
         "case_results": row.case_results,
         "pass_count": row.pass_count,
         "fail_count": row.fail_count,
@@ -45,20 +52,19 @@ def _run_out(row: Run) -> dict[str, Any]:
     }
 
 
-async def _run_metric(
-    metric: dict[str, Any],
+async def _dispatch_metric(
+    engine: str,
+    metric_id: str,
+    params: dict[str, Any],
     golden: Golden,
     actual_output: str,
+    judge_model: str,
     settings: Settings,
     token_client: TokenClient,
 ) -> dict[str, Any]:
-    engine = metric["engine"]
-    metric_id = metric["metric_id"]
-    params = metric.get("params", {})
-
     if engine == "deepeval":
         judge = deepeval_engine.DeepEvalTargetModel(
-            settings.llm_gateway_url, settings.llm_gateway_model, token_client
+            settings.llm_gateway_url, judge_model, token_client
         )
         return await deepeval_engine.run_metric(metric_id, params, golden, actual_output, judge)
     if engine == "ragas":
@@ -68,7 +74,7 @@ async def _run_metric(
             golden,
             actual_output,
             settings.llm_gateway_url,
-            settings.llm_gateway_model,
+            judge_model,
             token_client,
         )
     raise PlatformError(
@@ -76,6 +82,35 @@ async def _run_metric(
         f"engine {engine!r} is not runnable (v1 supports 'deepeval' and 'ragas' only)",
         status_code=422,
     )
+
+
+async def _run_metric(
+    metric: dict[str, Any],
+    golden: Golden,
+    actual_output: str,
+    judge_model: str,
+    settings: Settings,
+    token_client: TokenClient,
+) -> dict[str, Any]:
+    engine = metric["engine"]
+    metric_id = metric["metric_id"]
+    params = metric.get("params", {})
+    args = (engine, metric_id, params, golden, actual_output, judge_model, settings, token_client)
+
+    # D-063's reactive-retry shape, one level up from where LlmGatewayTarget applies it: neither
+    # engine's judge call goes through call_with_auth_retry internally (DeepEval's a_generate is
+    # the one hook this harness owns per-call, but ragas's Faithfulness/FactualCorrectness.ascore
+    # is a black box that can make several internal LLM calls this code never sees individually)
+    # — so the retry happens at the one call site both engines share: redo the whole metric once,
+    # with a force-refreshed token, if the first attempt fails on an expired one. A run's judging
+    # phase can genuinely take long enough to cross the 300s TTL on its own (found live).
+    try:
+        return await _dispatch_metric(*args)
+    except Exception as exc:  # noqa: BLE001
+        if not looks_like_auth_failure(exc):
+            raise
+        await token_client.force_refresh()
+        return await _dispatch_metric(*args)
 
 
 def build_app() -> FastAPI:
@@ -107,6 +142,7 @@ def build_app() -> FastAPI:
             raise PlatformError("invalid_suite", exc.reason, status_code=422) from exc
 
         model = body.model or settings.llm_gateway_model
+        judge_model = body.judge_model or settings.llm_gateway_model
         target = LlmGatewayTarget(settings.llm_gateway_url, model, token_client)
 
         case_results: list[dict[str, Any]] = []
@@ -117,7 +153,9 @@ def build_app() -> FastAPI:
             try:
                 actual_output = await target.complete(golden.input)
                 metric_results = [
-                    await _run_metric(metric, golden, actual_output, settings, token_client)
+                    await _run_metric(
+                        metric, golden, actual_output, judge_model, settings, token_client
+                    )
                     for metric in (suite.metrics or [])
                 ]
             except Exception as exc:  # noqa: BLE001
@@ -143,6 +181,7 @@ def build_app() -> FastAPI:
             suite_name=suite.name,
             suite_version=suite.version,
             model=model,
+            judge_model=judge_model,
             case_results=case_results,
             pass_count=pass_count,
             fail_count=fail_count,
@@ -170,6 +209,10 @@ def build_app() -> FastAPI:
         if row is None:
             raise PlatformError("run_not_found", f"no run with id {run_id!r}", status_code=404)
         return _run_out(row)
+
+    static_dir = Path(__file__).resolve().parents[2] / "static"
+    if static_dir.is_dir():
+        app.mount("/ui", StaticFiles(directory=static_dir, html=True), name="ui")
 
     return app
 

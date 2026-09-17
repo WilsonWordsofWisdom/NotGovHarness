@@ -1,0 +1,354 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Evals Runner</title>
+<style>
+  :root {
+    --bg: #f7f7f5;
+    --surface: #ffffff;
+    --border: #e2e0da;
+    --text: #24231f;
+    --text-dim: #6b6a63;
+    --accent: #7a5cff;
+    --accent-ink: #ffffff;
+    --danger: #b3261e;
+    --danger-bg: #fbebea;
+    --warn: #8a5a00;
+    --warn-bg: #fdf3dc;
+    --ok: #146c2e;
+    --ok-bg: #e8f6ec;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #17161c;
+      --surface: #201f27;
+      --border: #34323d;
+      --text: #ece9f7;
+      --text-dim: #a29fb3;
+      --accent: #a48bff;
+      --accent-ink: #17161c;
+      --danger: #ff8f87;
+      --danger-bg: #3a201f;
+      --warn: #f0c26b;
+      --warn-bg: #3a2f14;
+      --ok: #7fd99a;
+      --ok-bg: #16301f;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #17161c;
+    --surface: #201f27;
+    --border: #34323d;
+    --text: #ece9f7;
+    --text-dim: #a29fb3;
+    --accent: #a48bff;
+    --accent-ink: #17161c;
+    --danger: #ff8f87;
+    --danger-bg: #3a201f;
+    --warn: #f0c26b;
+    --warn-bg: #3a2f14;
+    --ok: #7fd99a;
+    --ok-bg: #16301f;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    line-height: 1.5;
+  }
+  .wrap { max-width: 960px; margin: 0 auto; padding: 2rem 1.5rem 4rem; }
+  header { margin-bottom: 1.5rem; }
+  header h1 { font-size: 1.5rem; margin: 0 0 0.25rem; letter-spacing: -0.01em; }
+  header p { margin: 0; color: var(--text-dim); font-size: 0.95rem; }
+
+  .help {
+    background: var(--surface); border: 1px dashed var(--border); border-radius: 8px;
+    padding: 0.8rem 1rem; font-size: 0.82rem; color: var(--text-dim); margin-bottom: 1.2rem;
+  }
+  .help code {
+    display: block; background: var(--bg); border-radius: 6px; padding: 0.5rem 0.6rem;
+    margin-top: 0.4rem; font-family: var(--mono); font-size: 0.76rem; overflow-x: auto;
+    color: var(--text);
+  }
+
+  input[type="text"], input[type="password"] {
+    width: 100%; padding: 0.55rem 0.7rem; border-radius: 8px;
+    border: 1px solid var(--border); background: var(--surface); color: var(--text);
+    font-family: inherit; font-size: 0.9rem;
+  }
+  label { display: block; font-size: 0.82rem; color: var(--text-dim); margin: 0.9rem 0 0.3rem; }
+  label:first-child { margin-top: 0; }
+
+  .panel {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+    padding: 1.1rem 1.2rem; margin-bottom: 1.3rem;
+  }
+  .panel h2 { margin: 0 0 0.2rem; font-size: 1rem; }
+  .panel .sub { margin: 0 0 0.8rem; color: var(--text-dim); font-size: 0.82rem; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 1rem; }
+
+  .toolbar { display: flex; gap: 0.6rem; align-items: flex-end; margin-bottom: 1.3rem; }
+  .toolbar .field { flex: 1; }
+  button {
+    font-family: inherit; font-size: 0.85rem; cursor: pointer; border-radius: 8px;
+  }
+  button.primary {
+    background: var(--accent); color: var(--accent-ink); border: none;
+    padding: 0.6rem 1.1rem; font-weight: 600; margin-top: 1rem;
+  }
+  button.primary:disabled { opacity: 0.55; cursor: default; }
+  button.ghost {
+    background: var(--surface); border: 1px solid var(--border); color: var(--text);
+    padding: 0.55rem 0.9rem;
+  }
+
+  .card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+    padding: 1rem 1.1rem; margin-bottom: 0.8rem;
+  }
+  .card-head { display: flex; justify-content: space-between; align-items: baseline; gap: 0.6rem; flex-wrap: wrap; }
+  .card h3 { margin: 0; font-size: 1rem; }
+  .badge {
+    font-size: 0.72rem; font-weight: 600; padding: 0.15rem 0.5rem; border-radius: 999px;
+    text-transform: uppercase; letter-spacing: 0.02em; white-space: nowrap;
+  }
+  .badge.pass { background: var(--ok-bg); color: var(--ok); }
+  .badge.fail { background: var(--danger-bg); color: var(--danger); }
+
+  .meta { color: var(--text-dim); font-size: 0.82rem; margin: 0.3rem 0 0.6rem; }
+  .meta span { margin-right: 1rem; }
+
+  .case { border: 1px solid var(--border); border-radius: 8px; padding: 0.7rem 0.85rem; margin-top: 0.6rem; }
+  .case-verdict { display: flex; justify-content: space-between; align-items: baseline; gap: 0.6rem; }
+  .case-text { font-size: 0.86rem; margin: 0.4rem 0; }
+  .case-text .label { color: var(--text-dim); font-size: 0.76rem; text-transform: uppercase; letter-spacing: 0.02em; }
+  .metric-row {
+    display: flex; justify-content: space-between; gap: 0.6rem; font-size: 0.8rem;
+    padding: 0.3rem 0; border-top: 1px solid var(--border);
+  }
+  .metric-row:first-of-type { border-top: none; margin-top: 0.4rem; }
+  .metric-reason { color: var(--text-dim); font-size: 0.78rem; margin: 0.15rem 0 0.3rem; }
+
+  .empty { color: var(--text-dim); font-size: 0.9rem; padding: 1.5rem 0; text-align: center; }
+  .result { margin-top: 0.6rem; padding: 0.6rem 0.8rem; border-radius: 8px; font-size: 0.84rem; }
+  .result.ok { background: var(--ok-bg); color: var(--ok); }
+  .result.err { background: var(--danger-bg); color: var(--danger); }
+  details > summary { cursor: pointer; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Evals Runner</h1>
+    <p>Run a published Eval Registry suite through real DeepEval + Ragas autoraters.</p>
+  </header>
+
+  <div class="help">
+    Needs a bearer token scoped for <code>evals:run</code> to submit a run, or any valid token to
+    just browse:
+    <code>curl -X POST http://localhost:8090/oauth/token \
+  -d grant_type=client_credentials -d client_id=example-service \
+  -d client_secret=&lt;example-service-secret&gt; -d scope=evals:run</code>
+    then paste the <code>access_token</code> below.
+  </div>
+
+  <div class="toolbar">
+    <div class="field">
+      <label for="token">Bearer token</label>
+      <input type="password" id="token" autocomplete="off" />
+    </div>
+    <button class="ghost" id="refresh">Refresh runs</button>
+  </div>
+
+  <div class="panel">
+    <h2>New run</h2>
+    <p class="sub">
+      The system-under-test and the judge/autorater are independently configurable — it's fine
+      for them to be the same model, but scoring your own model's output with itself is a known
+      self-preference-bias risk worth being able to separate out.
+    </p>
+    <label for="suiteName">Suite name</label>
+    <input type="text" id="suiteName" placeholder="evals-runner-smoke" />
+    <div class="grid">
+      <div>
+        <label for="suiteVersion">Suite version (optional — defaults to latest)</label>
+        <input type="text" id="suiteVersion" placeholder="0.2.0" />
+      </div>
+      <div></div>
+      <div>
+        <label for="targetModel">System-under-test model</label>
+        <input type="text" id="targetModel" placeholder="qwen3.8" />
+      </div>
+      <div>
+        <label for="judgeModel">Judge / autorater model</label>
+        <input type="text" id="judgeModel" placeholder="qwen3.8" />
+      </div>
+    </div>
+    <button class="primary" id="submit">Run suite</button>
+    <div id="submitResult"></div>
+  </div>
+
+  <div id="list"></div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  function el(tag, opts) {
+    const node = document.createElement(tag);
+    if (opts) {
+      if (opts.text !== undefined) node.textContent = opts.text;
+      if (opts.class) node.className = opts.class;
+      if (opts.attrs) for (const k in opts.attrs) node.setAttribute(k, opts.attrs[k]);
+    }
+    return node;
+  }
+
+  function clear(node) {
+    while (node.firstChild) node.removeChild(node.firstChild);
+  }
+
+  const listEl = document.getElementById("list");
+  const tokenEl = document.getElementById("token");
+  const refreshBtn = document.getElementById("refresh");
+  const submitBtn = document.getElementById("submit");
+  const submitResultEl = document.getElementById("submitResult");
+  const suiteNameEl = document.getElementById("suiteName");
+  const suiteVersionEl = document.getElementById("suiteVersion");
+  const targetModelEl = document.getElementById("targetModel");
+  const judgeModelEl = document.getElementById("judgeModel");
+
+  function authHeaders() {
+    const token = tokenEl.value.trim();
+    return token ? { Authorization: "Bearer " + token } : {};
+  }
+
+  async function loadList() {
+    clear(listEl);
+    let rows;
+    try {
+      const resp = await fetch("/runs", { headers: authHeaders() });
+      if (!resp.ok) throw new Error("request failed: " + resp.status);
+      rows = await resp.json();
+    } catch (err) {
+      listEl.appendChild(el("div", { class: "empty", text: "Couldn't load runs: " + err.message }));
+      return;
+    }
+    if (rows.length === 0) {
+      listEl.appendChild(el("div", { class: "empty", text: "No runs yet." }));
+      return;
+    }
+    for (const row of rows) listEl.appendChild(renderCard(row));
+  }
+
+  function renderMetric(m) {
+    const row = el("div", { class: "metric-row" });
+    row.appendChild(el("span", { text: m.engine + " / " + m.metric_id + " — score " + m.score }));
+    row.appendChild(el("span", { class: "badge " + (m.passed ? "pass" : "fail"), text: m.passed ? "pass" : "fail" }));
+    return row;
+  }
+
+  function renderCase(c) {
+    const box = el("div", { class: "case" });
+    const allPassed = c.metrics.length > 0 && c.metrics.every((m) => m.passed);
+    const verdict = el("div", { class: "case-verdict" });
+    verdict.appendChild(el("strong", { text: c.input }));
+    verdict.appendChild(el("span", { class: "badge " + (allPassed ? "pass" : "fail"), text: allPassed ? "pass" : "fail" }));
+    box.appendChild(verdict);
+
+    const expected = el("div", { class: "case-text" });
+    expected.appendChild(el("span", { class: "label", text: "expected: " }));
+    expected.appendChild(document.createTextNode(c.expected_output || "—"));
+    box.appendChild(expected);
+
+    const actual = el("div", { class: "case-text" });
+    actual.appendChild(el("span", { class: "label", text: "actual: " }));
+    actual.appendChild(document.createTextNode(c.actual_output));
+    box.appendChild(actual);
+
+    for (const m of c.metrics) {
+      box.appendChild(renderMetric(m));
+      if (m.reason) box.appendChild(el("div", { class: "metric-reason", text: m.reason }));
+    }
+    return box;
+  }
+
+  function renderCard(row) {
+    const card = el("div", { class: "card" });
+
+    const head = el("div", { class: "card-head" });
+    head.appendChild(el("h3", { text: row.suite_name + " @ " + row.suite_version }));
+    head.appendChild(el("span", { class: "badge " + (row.fail_count === 0 ? "pass" : "fail"),
+      text: row.pass_count + " passed / " + row.fail_count + " failed" }));
+    card.appendChild(head);
+
+    const meta = el("div", { class: "meta" });
+    meta.appendChild(el("span", { text: "target model: " + row.model }));
+    meta.appendChild(el("span", { text: "judge model: " + row.judge_model }));
+    meta.appendChild(el("span", { text: new Date(row.created_at).toLocaleString() }));
+    card.appendChild(meta);
+
+    const details = el("details");
+    details.appendChild(el("summary", { text: "Cases (" + row.case_results.length + ")" }));
+    for (const c of row.case_results) details.appendChild(renderCase(c));
+    card.appendChild(details);
+
+    return card;
+  }
+
+  async function submitRun() {
+    clear(submitResultEl);
+    const suiteName = suiteNameEl.value.trim();
+    if (!suiteName) {
+      submitResultEl.appendChild(el("div", { class: "result err", text: "Suite name is required." }));
+      return;
+    }
+    const body = { suite_name: suiteName };
+    const version = suiteVersionEl.value.trim();
+    if (version) body.suite_version = version;
+    const targetModel = targetModelEl.value.trim();
+    if (targetModel) body.model = targetModel;
+    const judgeModel = judgeModelEl.value.trim();
+    if (judgeModel) body.judge_model = judgeModel;
+
+    submitBtn.disabled = true;
+    submitResultEl.appendChild(el("div", { class: "result", text: "Running — this can take a few minutes against a local model…" }));
+    try {
+      const resp = await fetch("/runs", {
+        method: "POST",
+        headers: Object.assign({ "Content-Type": "application/json" }, authHeaders()),
+        body: JSON.stringify(body),
+      });
+      const data = await resp.json();
+      clear(submitResultEl);
+      if (resp.ok) {
+        submitResultEl.appendChild(el("div", { class: "result ok",
+          text: "Run complete: " + data.pass_count + " passed / " + data.fail_count + " failed." }));
+        loadList();
+      } else {
+        submitResultEl.appendChild(el("div", { class: "result err",
+          text: (data && data.error && data.error.message) || "run failed" }));
+      }
+    } catch (err) {
+      clear(submitResultEl);
+      submitResultEl.appendChild(el("div", { class: "result err", text: "Network error: " + err.message }));
+    } finally {
+      submitBtn.disabled = false;
+    }
+  }
+
+  refreshBtn.addEventListener("click", loadList);
+  submitBtn.addEventListener("click", submitRun);
+  loadList();
+})();
+</script>
+</body>
+</html>

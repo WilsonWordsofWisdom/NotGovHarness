@@ -19,6 +19,7 @@ class Run(Base):
     suite_name: Mapped[str] = mapped_column(String(128), nullable=False)
     suite_version: Mapped[str] = mapped_column(String(50), nullable=False)
     model: Mapped[str] = mapped_column(String(200), nullable=False)
+    judge_model: Mapped[str] = mapped_column(String(200), nullable=False)
     # Each entry: {input, expected_output, actual_output,
     #              metrics: [{metric_id, engine, score, reason, passed}]}
     case_results: Mapped[list] = mapped_column(JSON, nullable=False)

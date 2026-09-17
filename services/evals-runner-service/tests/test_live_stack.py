@@ -105,8 +105,15 @@ async def test_run_against_a_real_suite_judges_correctly_with_both_engines(
         engines_used = {m["engine"] for case in body["case_results"] for m in case["metrics"]}
         assert engines_used == {"deepeval", "ragas"}
 
+        # A fresh token, not `run_token` — the run above can legitimately take longer than
+        # identity-service's 300s TTL (found live: this exact reuse got a real 401 once the run
+        # crossed that boundary), the same class of staleness this whole build's service code is
+        # careful about, just reproduced in the test harness instead of the service this time.
+        read_token = await _token(
+            platform_identity_url, "example-service", "example-service-dev-secret", "evals:run"
+        )
         fetched = await client.get(
-            f"/runs/{body['run_id']}", headers={"Authorization": f"Bearer {run_token}"}
+            f"/runs/{body['run_id']}", headers={"Authorization": f"Bearer {read_token}"}
         )
         assert fetched.status_code == 200
         assert fetched.json()["run_id"] == body["run_id"]

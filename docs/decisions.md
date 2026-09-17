@@ -1103,3 +1103,40 @@ evaluation, not something to chase out of the harness's code. Fixed the test, no
 passed the correct case and at least one correctly failed the wrong case, which is what
 criterion 2 actually requires ("a case ... actually fails ... and a correct case actually
 passes"), not that every autorater agrees with every other autorater on every run.
+
+**D-085 — the judge/autorater model is independently configurable from the system-under-test
+model, requested by the user after v1 shipped; exposed through a self-hosted `/ui` matching the
+Skill Registry/Approvals shape.** Both engines' judge calls previously reused
+`settings.llm_gateway_model` unconditionally — the same value `POST /runs`'s pre-existing `model`
+field already let a caller override for the system-under-test, but with no equivalent knob for
+the judge. Added `judge_model` alongside `model` on `RunIn` (both default to
+`settings.llm_gateway_model`, so same-model-for-both, the common case, needs no change), threaded
+through `_run_metric` into `DeepEvalTargetModel` and `ragas_engine.run_metric`, and persisted on
+`Run` (migration `0002_judge_model`) so a stored run records which model actually judged it —
+necessary for spotting self-preference bias later, not just setting the knob. `GET /ui` (D-037's
+established shape: a static page under `services/evals-runner-service/static/`, mounted via
+`StaticFiles`, takes a bearer token in the browser, never a client secret) lets a caller submit a
+run with both models as plain text fields rather than only via raw `POST /runs` JSON — plain text
+inputs, not a fetched dropdown, since `llm-gateway` doesn't expose a models-list endpoint and only
+one model (`qwen3.8`) is configured in this reference deployment; building a model-catalog proxy
+for a one-model catalog would be premature.
+
+**D-086 — neither metric engine's judge calls actually had D-063's reactive-retry backstop; a
+long enough run's judging phase crossed the 300s TTL for real and proved it, caught by re-running
+the full test suite after D-085's change, not assumed still-fine.** `DeepEvalTargetModel.a_generate`
+and `ragas_engine._judge_client` both called `token_client.ensure_token()` directly — the same
+shape as `LlmGatewayTarget.complete`'s *proactive* half, but missing the reactive
+retry-on-auth-failure half `call_with_auth_retry` gives that one call. This gap had gone
+unnoticed through every earlier live verification in this build (D-071-style TTL proofs
+included) because those runs happened to stay under 300s; once a run's judging phase alone
+started taking 400s+ (confirmed real, not hypothetical, across several runs this build), a
+`POST /runs` genuinely failed with `401 - invalid token: Signature has expired` from inside a
+judge call — not a test artifact this time, a real gap in the service's own auth handling.
+Fixed at the one call site both engines share (`main.py`'s `_run_metric`, not inside either
+engine): on an auth-shaped failure, `force_refresh()` the shared `TokenClient` once and redo the
+whole metric dispatch — chosen over threading `call_with_auth_retry` into each engine
+individually because ragas's `Faithfulness`/`FactualCorrectness.ascore()` is a black box that can
+issue several internal LLM calls this code never sees individually, so there's no single
+per-call hook to wrap the way `LlmGatewayTarget` or DeepEval's own `a_generate` allow — redoing
+the whole metric once, the same "one retry is enough" scope D-063 established, is the shape that
+actually fits both engines uniformly.
