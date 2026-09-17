@@ -677,6 +677,51 @@ services:
       llm-gateway:
         condition: service_started
 
+  # Agent Builder (Wave 4, D-054, D-070..D-074) — the first Wave 4 harness: constructs and runs
+  # a real single-agent CrewAI crew against llm-gateway, calling one tool federated through
+  # agent-gateway (D-072, not a raw MCP client), then signs and publishes the resulting Agent
+  # Card and selects baseline eval suites. Same service-calls-service auth shape as mem0-service/
+  # knowledge-service (D-062/D-067) — its own real OAuth2 client (D-073), not a borrowed
+  # simulated principal. CrewAI's telemetry and tracing are both disabled (D-070, D-074).
+  agent-builder-service:
+    profiles: ["builder"]
+    security_opt:
+      - seccomp:unconfined
+    build:
+      context: .
+      dockerfile: services/agent-builder-service/Dockerfile
+    environment:
+      SERVICE_NAME: agent-builder-service
+      ENV: dev
+      DATABASE_URL: postgresql+asyncpg://platform:platform@postgres:5432/builder
+      OAUTH2_JWKS_URL: http://identity-service:8000/.well-known/jwks.json
+      LLM_GATEWAY_URL: http://llm-gateway:8000
+      AGENT_GATEWAY_URL: http://agent-gateway:8000
+      AGENT_REGISTRY_URL: http://agent-registry:8000
+      EVAL_REGISTRY_URL: http://eval-registry:8000
+      IDENTITY_URL: http://identity-service:8000
+      BUILDER_CLIENT_SECRET: ${BUILDER_CLIENT_SECRET:-agent-builder-service-dev-secret}
+      CREWAI_DISABLE_TELEMETRY: "true"
+      CREWAI_TRACING_ENABLED: "false"
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+    ports:
+      - "8102:8000" # /builds — published for skip-if-down tests
+    depends_on:
+      postgres:
+        condition: service_healthy
+      otel-collector:
+        condition: service_started
+      identity-service:
+        condition: service_started
+      llm-gateway:
+        condition: service_started
+      agent-gateway:
+        condition: service_started
+      agent-registry:
+        condition: service_started
+      eval-registry:
+        condition: service_started
+
   spire-server:
     image: ghcr.io/spiffe/spire-server:1.15.1
     container_name: spire-server # referenced by name from spire-bootstrap's `docker exec`

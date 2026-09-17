@@ -40,3 +40,5 @@ CREATE DATABASE memory_test OWNER platform;
 -- a small `documents` metadata table directly (Alembic-managed).
 CREATE DATABASE knowledge OWNER platform;
 CREATE DATABASE knowledge_test OWNER platform;
+CREATE DATABASE builder OWNER platform;
+CREATE DATABASE builder_test OWNER platform;
