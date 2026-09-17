@@ -979,3 +979,66 @@ tests are written against — safe because crewai's own `mcp` usage is dead code
 harness's perspective. Verified by re-running mcp-skills-demo's full test suite (including its
 live-stack test against the real running container) and `pyright` on both services, plus the
 whole workspace's `ruff check .` / `pyright`, all clean, before trusting the override.
+
+**D-077 — Evals runner's system-under-test is a direct `llm-gateway` completion for v1, not a
+real A2A-driven agent — decided with the user after checking the platform actually has nothing to
+drive.** The implementation plan's original wording says this harness "drives agents via A2A."
+Checked before designing anything: `a2a-sdk` is declared as an Agent Registry dependency but
+never imported or used anywhere in this codebase — Agent Registry stores a Card's `url` field as
+an opaque string with no client behind it, and Agent Builder's own published cards carry a
+placeholder URI (`agent-builder-service://agents/{name}`) that resolves to nothing. No
+independently-callable A2A agent endpoint exists anywhere in this platform yet — that is what
+Deployment Pipeline would produce, and it was explicitly skipped in favor of building this
+harness next. Presented as a genuine fork to the user (direct `llm-gateway` completion vs.
+evaluating against `agent-builder-service`'s `/builds` vs. building a pluggable target
+abstraction with only one real backend behind it) rather than assumed silently; the user chose
+direct `llm-gateway` completion — exactly the `input` → `actual_output` shape DeepEval's and
+Ragas's own metrics already expect, honestly buildable and fully verifiable today. Real
+A2A-agent-driving is a documented non-goal, not a dropped requirement, for once Deployment
+Pipeline produces something real to point at.
+
+**D-078 — DeepEval's telemetry and its separate Confident AI cloud-upload path are both cleanly
+gated, verified from source; the high-level `evaluate()` wrapper is skipped anyway in favor of
+bare metric objects.** `DEEPEVAL_TELEMETRY_OPT_OUT=1` is a real, correctly-checked gate —
+`deepeval.telemetry.client.capture()` reads it and early-returns before touching PostHog, and
+`get_backend()` swaps in a `NoopBackend` when set. Separately, `evaluate()`'s own result-upload
+path (`TestRunManager.wrap_up_test_run` → `post_test_run`) is gated on `is_confident()`, which is
+literally `get_confident_api_key() is not None` — since `CONFIDENT_API_KEY` is never set here,
+that branch is provably unreachable, not just assumed unreachable. First library since
+llama-index (D-064) to pass this check cleanly on the first read, no trap. Regardless of the
+clean gating, `evaluate()` itself is skipped in this design in favor of instantiating metric
+objects (`GEval`, `AnswerRelevancyMetric`, `FaithfulnessMetric`) directly and calling
+`.a_measure()` per case — `evaluate()` is built for local/CLI use (console reports, local result
+files under `.deepeval/`, login-prompt nudges) that a server process has no use for. A small
+custom `DeepEvalBaseLLM` adapter points DeepEval's judge calls at `llm-gateway`, constructing its
+underlying client fresh on every call rather than caching it on the instance — sidestepping
+D-069's whole class of bug by construction instead of needing to reactively test for it per
+integration, the lesson D-069 itself named.
+
+**D-079 — a fresh `pip install ragas` is broken out of the box; ragas's own unpinned
+`langchain-community` dependency resolves to a release that breaks its unconditional import.**
+`import ragas` failed immediately: `ragas/llms/base.py` unconditionally imports
+`langchain_community.chat_models.vertexai.ChatVertexAI`, but PyPI's `ragas==0.4.3` declares
+`langchain-community` with **no version bound at all**, so a fresh install resolves to today's
+0.4.2 — a LangChain-1.0-generation release that moved `ChatVertexAI` out of that module entirely.
+Verified live: pinning `langchain-community<0.4` (resolves to 0.3.31) fixes the import cleanly.
+Will pin this explicitly in `evals-runner-service`'s `pyproject.toml` rather than leaving it to
+float, the same "don't trust an unpinned transitive dependency to stay compatible" lesson D-076
+just taught one layer up (a cross-service conflict there; ragas's own internal breakage here).
+Separately found ragas 0.4's metrics API mid-redesign: the old `ragas.metrics.<MetricName>`
+top-level imports are deprecated in favor of `ragas.metrics.collections`, paired with a new
+`llm_factory(model, provider="openai", client=<any OpenAI-compatible client>)` integration point
+— this is the non-deprecated path this design uses to point ragas's judge calls at `llm-gateway`.
+`RAGAS_DO_NOT_TRACK=true` is a real, verified-clean telemetry opt-out: `ragas/_analytics.py`'s
+`track()` checks `do_not_track()` and returns before ever calling its own first-party analytics
+endpoint (`t.explodinggradients.com`, not PostHog).
+
+**D-080 — Promptfoo and `redteam` suites are deferred from v1, not silently dropped.** Promptfoo
+is a Node.js CLI, not a Python library — adopting it means a second toolchain in an otherwise
+all-Python monorepo (already flagged as a risk in the implementation plan) for a job DeepEval and
+Ragas already cover the shape of; a real, separate follow-up if a concrete need for it surfaces,
+not bundled into this harness's first build. `redteam` suites (D-040: generation of adversarial
+inputs, not assertion against a fixed dataset) are a meaningfully different code path from
+`cases` suites — deferred for the same "one thing well, first" reasoning Agent Builder applied to
+multi-agent crews. `metric_id`/`engine: "custom"` is rejected outright with a clear 422 for v1,
+not treated as a silent no-op pass.
