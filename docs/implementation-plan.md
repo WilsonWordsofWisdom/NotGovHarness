@@ -242,9 +242,40 @@ dependencies. Phase 0 is the concrete gate before any harness is built.
   *other* affected service's own real test suite before trusting it. **Merged to `main`.** See
   [superpowers/specs/2026-09-08-agent-builder-harness-design.md](superpowers/specs/2026-09-08-agent-builder-harness-design.md)
   and decisions D-070..D-076.
+- **Evals Runner** (DeepEval + Ragas) — built and verified end to end (all 5 done-when criteria
+  confirmed live: a real run against a real published Eval Registry `cases` suite computes
+  genuine DeepEval *and* Ragas scores in the same run via real `llm-gateway` calls; a
+  deliberately-wrong case actually fails and a correct one actually passes; results persist and
+  read back in full via `GET /runs/{id}`; zero outbound telemetry, verified from source and then
+  live; this service's own token survives real waits well past the 300s TTL). Deployment Pipeline
+  was deliberately skipped in favor of this harness, at explicit user direction — no real
+  A2A-callable agent exists anywhere in this platform yet (checked, not assumed), so v1's
+  system-under-test is a direct `llm-gateway` completion instead, a genuine design fork walked
+  through with the user before any code, with real agent-driving deferred as a documented
+  non-goal until Deployment Pipeline exists. The system-under-test and judge/autorater models are
+  independently configurable (`model`/`judge_model` on `POST /runs`, defaulting to the same
+  model — fine, but a self-preference-bias risk if that's the only option), with a self-hosted
+  `GET /ui` (same shape as Skill Registry's/Approvals' `/ui`) to set both without hand-writing
+  JSON. Ten real findings along the way (D-077..D-086): DeepEval's and Ragas's telemetry/
+  cloud-upload paths traced to source and confirmed cleanly gated; a fresh `pip install ragas` is
+  broken out of the box (its own unpinned `langchain-community` dependency resolves to a release
+  that breaks its unconditional import); a *third* crewai-vs-new-harness dependency conflict
+  (`posthog`, via crewai's unused `chromadb` dependency); `llm-gateway`'s own upstream timeout
+  (30s) wasn't enough for a judge-shaped completion and was raised to 120s; Ragas's
+  `FactualCorrectness` needs a substantive reference, not a bare word (strict NLI entailment, not
+  general world-knowledge truth); the two autoraters occasionally disagree with each other on a
+  borderline case (inherent to LLM-as-judge evaluation, not a bug); and — caught only by
+  re-running the full test suite after adding the judge-model knob, not assumed still-fine —
+  neither engine's judge calls actually had D-063's reactive-retry backstop, only the
+  system-under-test call did, fixed at the one call site both engines share. Three follow-up
+  feature requests logged for their own future design passes, not built here: auto-suggesting
+  goldens from the system-under-test, auto-generating synthetic data from confirmed goldens, and
+  extending model-configurability to those two new phases. **Merged to `main`.** See
+  [superpowers/specs/2026-09-18-evals-runner-harness-design.md](superpowers/specs/2026-09-18-evals-runner-harness-design.md)
+  and decisions D-077..D-086.
 - Remaining in Wave 4: **Deployment Pipeline** (Docker + Temporal — packages an agent into an
-  image, runs it, emits deploy events, runs Evals as a gate) and **Evals runner**
-  (DeepEval/Promptfoo/Ragas, judges via LLM Gateway) — neither started yet.
+  image, runs it, emits deploy events, runs Evals as a gate) — not started yet, deliberately
+  skipped so far in favor of Evals Runner.
 
 | Area | State |
 |---|---|
