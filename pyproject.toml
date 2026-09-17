@@ -22,10 +22,18 @@ package = false
 # not crewai-tools' MCPServerAdapter), so pinning `mcp` to what mcp-skills-demo already needs is
 # safe from crewai's side; verified by re-running mcp-skills-demo's own tests + pyright against
 # the override before relying on it.
+# evals-runner-service's deepeval>=4.2 needs posthog>=7.0.0,<8.0.0, but crewai>=1.15.0 pulls in
+# chromadb>=1.1.0 (for its own unused-here optional memory backend, D-070) which caps
+# posthog<6.0.0 — the same shape of conflict as D-075, one dependency layer further down.
+# Telemetry is disabled on both sides of this either way (CREWAI_DISABLE_TELEMETRY,
+# DEEPEVAL_TELEMETRY_OPT_OUT), and chromadb is dead code from agent-builder-service's own
+# perspective, so forcing posthog to deepeval's newer range is safe from crewai's side — verified
+# by re-running agent-builder-service's own test suite against the override before relying on it.
 override-dependencies = [
     "json-repair>=0.60.1,<0.61.0",
     "regex>=2026.1.15,<2026.2.0",
     "mcp>=2.1.1,<3",
+    "posthog>=7.0.0,<8.0.0",
 ]
 
 [tool.uv.workspace]

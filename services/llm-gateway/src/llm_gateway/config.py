@@ -18,3 +18,10 @@ class Settings(PlatformSettings):
     # D-043) — a backend-only secret this façade holds; callers never see or need it.
     litellm_url: str = "http://localhost:4000"
     litellm_virtual_key: str = "changeme"
+
+    # UpstreamClient's default (30s) genuinely isn't enough for every real completion through
+    # this chain (llm-gateway -> LiteLLM -> the local Ollama model) — a structured judge prompt
+    # (e.g. DeepEval's GEval, Ragas's FactualCorrectness) can legitimately take longer than a
+    # plain chat completion. Found live building Evals Runner (D-082): a real request timed out
+    # with httpx.ReadTimeout at the 30s default well before the model was actually done.
+    chat_completion_timeout: float = 120.0

@@ -23,7 +23,7 @@ def build_app() -> FastAPI:
     settings = Settings()
     require_identity = make_require_identity(settings)
     require_call_scope = require_scope(require_identity, "llm_gateway:call")
-    upstream = UpstreamClient(settings.litellm_url)
+    upstream = UpstreamClient(settings.litellm_url, timeout=settings.chat_completion_timeout)
 
     app = create_app(settings, lifespan_hooks=[lifespan_hook(upstream)])
 

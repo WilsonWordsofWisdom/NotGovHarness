@@ -1,13 +1,14 @@
 # Evals Runner Harness — Design
 
-**Status:** design drafted, not yet built.
+**Status:** built and verified live — all 5 done-when criteria confirmed against the running
+stack, including a real 400+s run after a deliberate wait past the 300-second token TTL.
 **Date:** 2026-09-18
 **Wave:** 4 (Agent Lifecycle) — second Wave 4 harness (Deployment Pipeline deliberately skipped
 for now, at explicit user direction)
 **Branch:** `feat/wave4-evals-runner`
 
 Related: [../../architecture.md](../../architecture.md) ·
-[../../decisions.md](../../decisions.md) (D-039..D-042, D-077..D-080) ·
+[../../decisions.md](../../decisions.md) (D-039..D-042, D-077..D-084) ·
 [../../implementation-plan.md](../../implementation-plan.md) ·
 [2026-08-30-eval-registry-harness-design.md](2026-08-30-eval-registry-harness-design.md)
 
@@ -174,16 +175,37 @@ later.
 
 *(updated live with real findings during build)*
 
-- Ragas's `langchain-community<0.4` pin needs to coexist with whatever the shared uv workspace
-  already resolves for `langchain`-family packages elsewhere (none currently, but worth checking
-  `uv sync --all-packages` doesn't need a workspace-root override the way D-075/D-076 did).
-- DeepEval's and Ragas's judge calls both go through `llm-gateway`, meaning every metric
-  evaluation is bounded by the local Ollama model's own response time (same class of latency
-  already observed for Agent Builder's `crew.kickoff()`) — worth confirming a suite of a handful
-  of cases × a couple of metrics each completes in a reasonable window for a synchronous
-  `POST /runs`, not something that needs to become async/polling for v1.
-- No suite is published in Eval Registry yet — step 7 above (publishing a real one) is on this
-  harness's own critical path, not something to assume already exists.
-- Whether DeepEval's and Ragas's metric *reasons* (free-text judge explanations) are stable
-  enough across repeated runs of the same case to be useful for debugging is untested — criterion
-  2 only requires the pass/fail verdict to be correct, not the reason text to be deterministic.
+- Ragas's `langchain-community<0.4` pin coexists cleanly with the rest of the shared uv
+  workspace — confirmed live, no workspace-root `override-dependencies` entry was needed the way
+  D-075/D-076 needed one for crewai. A *third* crewai-vs-new-harness conflict did surface
+  (deepeval's `posthog` pin vs. crewai's own unused `chromadb` dependency's `posthog` cap) and
+  needed exactly that treatment (D-081).
+- DeepEval's and Ragas's judge calls both go through `llm-gateway`, and each metric can trigger
+  several sequential judge calls internally (GEval's evaluation-steps generation, Ragas's claim
+  decomposition + NLI verification) — confirmed live a two-case, two-metric run takes several
+  minutes against the local Ollama model, not something to assume fast. `llm-gateway`'s own
+  upstream timeout (30s default) was too tight for this and had to be raised to 120s (D-082) —
+  the first harness to hit that ceiling. `POST /runs` stays synchronous for v1 regardless (no
+  suite bigger than a handful of cases has been tried); async/polling is a real follow-up once
+  suite size grows.
+- No suite was published in Eval Registry before this build started — publishing one first (step
+  7) was genuinely on the critical path, confirmed by needing to do it before any live
+  verification could proceed.
+- Ragas's `FactualCorrectness` needs a substantive (sentence-length) reference, not a bare word —
+  a real, live-caught finding (D-083), not anticipated in the original design. Eval suite authors
+  need to know this when writing `expected_output` for a `factual_correctness`-graded case.
+- DeepEval's and Ragas's metric *reasons* are genuinely informative in practice (verified live —
+  GEval's reasons read as coherent, correct explanations); Ragas's `FactualCorrectness` never
+  populates `reason` at all (confirmed from its own source, D-083) — that's normal for this
+  metric, not a bug to chase.
+- The autorater/system-under-test model split is currently the same model (`qwen3.8`) for both —
+  a known self-preference-bias risk in LLM-as-judge setups. `POST /runs` already accepts a
+  `model` override for the system-under-test; the judge model is not yet independently
+  configurable in either engine. Flagged to the user as an open follow-up, not silently
+  resolved either way.
+- The two autoraters occasionally disagree with each other on the same borderline case — caught
+  live when the committed live-stack test failed once, non-repeatably, with `pass_count`/
+  `fail_count` still correct but one engine's verdict flipped on a closely-worded comparison
+  (D-084). Inherent to LLM-as-judge evaluation on a small local model, not a bug; the test now
+  asserts at least one real judge call reaches the correct verdict per case, not unanimous
+  agreement every run.

@@ -42,3 +42,5 @@ CREATE DATABASE knowledge OWNER platform;
 CREATE DATABASE knowledge_test OWNER platform;
 CREATE DATABASE builder OWNER platform;
 CREATE DATABASE builder_test OWNER platform;
+CREATE DATABASE evals OWNER platform;
+CREATE DATABASE evals_test OWNER platform;

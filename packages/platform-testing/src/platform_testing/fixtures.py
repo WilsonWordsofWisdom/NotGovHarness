@@ -46,6 +46,7 @@ LLM_GATEWAY_URL = os.getenv("PLATFORM_TEST_LLM_GATEWAY_URL", "http://localhost:8
 MEM0_URL = os.getenv("PLATFORM_TEST_MEM0_URL", "http://localhost:8100")
 KNOWLEDGE_URL = os.getenv("PLATFORM_TEST_KNOWLEDGE_URL", "http://localhost:8101")
 AGENT_BUILDER_URL = os.getenv("PLATFORM_TEST_AGENT_BUILDER_URL", "http://localhost:8102")
+EVALS_RUNNER_URL = os.getenv("PLATFORM_TEST_EVALS_RUNNER_URL", "http://localhost:8103")
 MINIO_ENDPOINT = os.getenv("PLATFORM_TEST_MINIO_ENDPOINT", "localhost:9090")
 
 
@@ -322,6 +323,19 @@ def platform_agent_builder_url() -> str:
             "gateway --profile llm --profile builder up -d)"
         )
     return AGENT_BUILDER_URL
+
+
+@pytest.fixture
+def platform_evals_runner_url() -> str:
+    host, _, port = EVALS_RUNNER_URL.replace("http://", "").replace("https://", "").partition(":")
+    if not _reachable(host or "localhost", int(port or "8103")):
+        pytest.skip(
+            "evals-runner-service not reachable on "
+            f"{EVALS_RUNNER_URL} (start the stack: "
+            "docker compose --profile core --profile identity --profile registry --profile "
+            "llm --profile evals up -d)"
+        )
+    return EVALS_RUNNER_URL
 
 
 @pytest.fixture

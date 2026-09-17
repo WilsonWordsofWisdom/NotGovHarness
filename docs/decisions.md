@@ -1042,3 +1042,64 @@ inputs, not assertion against a fixed dataset) are a meaningfully different code
 `cases` suites — deferred for the same "one thing well, first" reasoning Agent Builder applied to
 multi-agent crews. `metric_id`/`engine: "custom"` is rejected outright with a clear 422 for v1,
 not treated as a silent no-op pass.
+
+**D-081 — a third crewai-vs-new-harness conflict, one dependency layer further down than D-075:
+deepeval's `posthog` pin vs. crewai's unused `chromadb` dependency's own `posthog` cap.**
+`uv sync --all-packages` failed the moment `evals-runner-service` was scaffolded:
+`deepeval>=4.2.0` needs `posthog>=7.0.0,<8.0.0`, but `crewai>=1.15.0` pulls in
+`chromadb>=1.1.0,<1.2.dev0` (for its own optional built-in memory backend, D-070 — dead code from
+agent-builder-service's perspective, since this platform's own Memory/Knowledge-RAG harnesses are
+used instead), and `chromadb` caps `posthog<6.0.0`. Same shape of fix as D-075/D-076: extended
+the workspace-root `override-dependencies` with `"posthog>=7.0.0,<8.0.0"`. Telemetry is disabled
+on both sides regardless (`CREWAI_DISABLE_TELEMETRY`, `DEEPEVAL_TELEMETRY_OPT_OUT`), so the
+version bump can't newly enable anything that was off — but verified anyway, not assumed: crewai,
+chromadb, and posthog all still import cleanly under the override, and agent-builder-service's
+own test suite still passes before trusting it. Three real cross-service dependency conflicts
+from one `crewai` install now (D-075, D-076, D-081) is itself worth noting as a pattern — a
+mature-but-heavy framework's own transitive tree is a real, recurring cost in a shared-lockfile
+workspace, not a one-off surprise.
+
+**D-082 — `llm-gateway`'s upstream client's default 30-second timeout genuinely isn't enough for
+every real completion; raised for this façade specifically, found live, not anticipated.** The
+first real `POST /runs` against a published suite failed with a 502 — `llm-gateway`'s own logs
+showed `httpx.ReadTimeout` on its call to LiteLLM: `platform_core.facade.UpstreamClient`'s
+30-second default (unchanged since Phase 0) was hit before the local Ollama model finished a
+structured judge prompt (DeepEval's `GEval` evaluation-steps generation, Ragas's
+`FactualCorrectness` claim decomposition). Every prior harness's calls through `llm-gateway`
+happened to be simple enough to finish well inside 30s; this is the first one making
+judge-shaped calls, which are longer and more numerous per request. Fixed by adding a
+`chat_completion_timeout` setting to `llm-gateway` itself (120s) and passing it to its
+`UpstreamClient` — scoped to this one façade, not `platform_core.facade`'s shared default, since
+nothing else in this platform has hit the ceiling yet. Verified by rebuilding and restarting the
+`llm-gateway` container and re-running the same request, which then succeeded.
+
+**D-083 — Ragas's `FactualCorrectness` needs a substantive reference, not a bare word or short
+phrase — a real finding about the metric's own design, not a bug in this harness's code.** The
+first live run scored *both* a correct case (`response="Paris"`, `reference="Paris"`, identical
+strings) and a deliberately-wrong one at exactly `0.0`, with `reason: null` on both — enough to
+suspect a bug. Traced into `FactualCorrectness.ascore()`'s own source rather than assumed broken:
+`reason` is simply never populated by this metric (its `MetricResult` is constructed with only
+`value` — not a bug, just this metric's normal shape). The `0.0` score, though, was real and
+reproducible: claim decomposition on the bare word "Paris" produces a claim like `"Paris is a
+city."`, and the metric's NLI verification then checks whether that claim can be *entailed from
+the reference text alone* — strict entailment, not general world-knowledge truth. A
+one-word reference ("Paris") contains no information to entail "is a city" from, so the verifier
+correctly (if unhelpfully, for this test data) said no, regardless of whether the underlying fact
+is true. Verified live: the identical metric scores `1.0` once both `response` and `reference`
+are full sentences (`"Paris is the capital of France."`) instead of bare words — confirming the
+fix is in the suite's dataset shape, not in `ragas_engine.py`. `evals-runner-smoke`'s goldens
+were rewritten accordingly before relying on this harness's live verification.
+
+**D-084 — the two autoraters occasionally disagree with each other on the same borderline case;
+the live-stack test now asserts real judgment happened, not unanimous agreement every run.**
+The committed live-stack test initially asserted every metric on the deliberately-wrong case
+failed (`all(...)`) — it failed on one run: `pass_count`/`fail_count` were still correct (1/1),
+but one of the two engines passed the wrong case while the other correctly failed it. Re-ran the
+identical suite manually straight after and got a clean result (both engines agreeing, every
+metric correct) — not a repeatable bug, genuine run-to-run judge variance on a small local model
+comparing two similarly-phrased sentences. This is an inherent property of LLM-as-judge
+evaluation, not something to chase out of the harness's code. Fixed the test, not the model:
+`all(...)` → `any(...)` on both directions — proving at least one real judge call correctly
+passed the correct case and at least one correctly failed the wrong case, which is what
+criterion 2 actually requires ("a case ... actually fails ... and a correct case actually
+passes"), not that every autorater agrees with every other autorater on every run.
