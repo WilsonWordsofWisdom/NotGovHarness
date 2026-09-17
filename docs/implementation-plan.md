@@ -217,6 +217,35 @@ dependencies. Phase 0 is the concrete gate before any harness is built.
 - **Wave 3 is now complete and merged to `main`** (Agent Gateway, Temporal, Approvals/HITL,
   Sandbox, Guardrails, Memory, Knowledge/RAG).
 
+**Wave 4 progress:**
+- **Agent Builder** (CrewAI) — built and verified end to end (all 6 done-when criteria confirmed
+  live: a real bearer token submits a build and `crew.kickoff()` runs against `llm-gateway` with
+  genuine model output; the built agent genuinely calls a tool wired through `agent-gateway`,
+  proven via CrewAI's own event bus rather than asserted from configuration; the resulting Agent
+  Card is signed and published, fetchable back byte-for-byte from `agent-registry`; Eval
+  Registry's suite lookup is queried for real; CrewAI's own Code Interpreter/RAG-URL tools are
+  never enabled anywhere, confirmed by inspection, not just documented intent; this service's own
+  token survived a real 380-second wait past the 300-second TTL). First Wave 4 harness — the
+  first time this platform's build pipeline runs a real agent framework, not just a registry or
+  gateway around one. Custom `crewai.tools.BaseTool` calls `agent-gateway`'s REST API rather than
+  CrewAI's own MCP client (D-072), keeping tool access inside this platform's identity/scope
+  model — the same seam Agent Gateway was built to close for every other caller. Holds its own
+  real OAuth2 client (D-062/D-073), having checked first that Agent Registry's own tests depend
+  on `example-service`'s existing grants before deciding not to reuse them. Seven real findings
+  along the way (D-070..D-076): CrewAI's telemetry and a *separate* tracing/consent subsystem
+  both needed their own investigation (the latter fires even with `tracing=False`, traced to an
+  unrelated gate function, though its only network-capable path turned out to be dead code in a
+  non-interactive server); and two genuine cross-service dependency conflicts in the shared uv
+  workspace — crewai has no jointly-satisfiable version with guardrails-service's `llm-guard`
+  pin, and crewai's own narrow `mcp` pin silently downgraded mcp-skills-demo's already-passing
+  tests — both fixed with workspace-root `override-dependencies`, each verified against the
+  *other* affected service's own real test suite before trusting it. **Merged to `main`.** See
+  [superpowers/specs/2026-09-08-agent-builder-harness-design.md](superpowers/specs/2026-09-08-agent-builder-harness-design.md)
+  and decisions D-070..D-076.
+- Remaining in Wave 4: **Deployment Pipeline** (Docker + Temporal — packages an agent into an
+  image, runs it, emits deploy events, runs Evals as a gate) and **Evals runner**
+  (DeepEval/Promptfoo/Ragas, judges via LLM Gateway) — neither started yet.
+
 | Area | State |
 |---|---|
 | Workspace foundation (uv, Taskfile, ruff/pyright/pytest, `.env.example`) | ✅ merged |
@@ -429,3 +458,4 @@ new logical Postgres DB (db-per-service) unless it brings a specialized engine.
 - **Node dependency for Promptfoo** — the Evals wave introduces a Node toolchain alongside Python.
 - **Temporal is a shared dependency** (Approvals + Deployment) — stand it up once, in Wave 3.
 - **Scope discipline** — Phase 0 builds no harness logic beyond `example-service`.
+
