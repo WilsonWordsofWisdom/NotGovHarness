@@ -47,6 +47,9 @@ MEM0_URL = os.getenv("PLATFORM_TEST_MEM0_URL", "http://localhost:8100")
 KNOWLEDGE_URL = os.getenv("PLATFORM_TEST_KNOWLEDGE_URL", "http://localhost:8101")
 AGENT_BUILDER_URL = os.getenv("PLATFORM_TEST_AGENT_BUILDER_URL", "http://localhost:8102")
 EVALS_RUNNER_URL = os.getenv("PLATFORM_TEST_EVALS_RUNNER_URL", "http://localhost:8103")
+DEPLOYMENT_PIPELINE_URL = os.getenv(
+    "PLATFORM_TEST_DEPLOYMENT_PIPELINE_URL", "http://localhost:8104"
+)
 MINIO_ENDPOINT = os.getenv("PLATFORM_TEST_MINIO_ENDPOINT", "localhost:9090")
 
 
@@ -336,6 +339,21 @@ def platform_evals_runner_url() -> str:
             "llm --profile evals up -d)"
         )
     return EVALS_RUNNER_URL
+
+
+@pytest.fixture
+def platform_deployment_pipeline_url() -> str:
+    host, _, port = (
+        DEPLOYMENT_PIPELINE_URL.replace("http://", "").replace("https://", "").partition(":")
+    )
+    if not _reachable(host or "localhost", int(port or "8104")):
+        pytest.skip(
+            "deployment-pipeline-service not reachable on "
+            f"{DEPLOYMENT_PIPELINE_URL} (start the stack: "
+            "docker compose --profile core --profile identity --profile registry --profile "
+            "llm --profile evals --profile temporal --profile deployment up -d)"
+        )
+    return DEPLOYMENT_PIPELINE_URL
 
 
 @pytest.fixture

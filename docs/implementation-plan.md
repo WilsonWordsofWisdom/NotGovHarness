@@ -13,7 +13,7 @@ An approved Phase 0 scaffold spec, a decisions log (D-001…D-017), and an archi
 libraries/dependencies, the backend infra + databases, and the build order derived from
 dependencies. Phase 0 is the concrete gate before any harness is built.
 
-## Status (updated 2026-08-30)
+## Status (updated 2026-09-25 — all 16 harnesses built, verified, and merged to `main`)
 
 **Phase 0 is COMPLETE and merged to `main`** (PRs #2 + #3). All six success criteria verified.
 
@@ -273,26 +273,42 @@ dependencies. Phase 0 is the concrete gate before any harness is built.
   extending model-configurability to those two new phases. **Merged to `main`.** See
   [superpowers/specs/2026-09-18-evals-runner-harness-design.md](superpowers/specs/2026-09-18-evals-runner-harness-design.md)
   and decisions D-077..D-086.
-- **Deployment Pipeline** (Docker + Temporal — the last of all 16 harnesses) — design walked
-  through with the user and committed (design doc + D-087..D-089); service code not yet started.
-  Two real gaps surfaced reading the actual code of its two dependencies, not assumed from their
-  APIs: Agent Builder's `Build` row never persists `role`/`goal`/`backstory`, and its published
-  Agent Card is thinner still, so there was nothing durable to read that says how to actually
-  redeploy an agent — fixed by adding an `extensions` entry to the card (A2A's own enrichment
-  mechanism), not by coupling Deployment Pipeline to Agent Builder's internal storage. And no
-  real, independently-callable agent endpoint exists anywhere in this platform yet — Evals
-  Runner's own D-077 deferred exactly this for lack of anything real to call; Deployment Pipeline
-  is what creates the first one. Two genuine forks were walked through with the user before any
-  code: agents deploy as one shared, parameterized runtime image rather than a per-agent Docker
-  build (D-087); and Evals Runner is being extended now with a real agent-runtime target type
-  rather than leaving the eval-gate grading only the underlying model (D-089) — closing D-077's
-  deferred non-goal for real. Three small, independent pieces resolve these dependencies and
-  land on `main` first, each its own branch, before `deployment-pipeline-service` itself is
-  built: `feat/agent-runtime` (the new shared runtime image), `feat/agent-builder-card-extensions`
-  (the card-schema fix), `feat/evals-runner-agent-target` (the new target type, depends on
-  `agent-runtime` existing to verify against). See
+- **Deployment Pipeline** (Docker + Temporal — the last of all 16 harnesses) — built and verified
+  end to end. Two real gaps surfaced reading the actual code of its two dependencies, not assumed
+  from their APIs: Agent Builder's `Build` row never persisted `role`/`goal`/`backstory`, and its
+  published Agent Card was thinner still, so there was nothing durable to read that says how to
+  actually redeploy an agent — fixed by adding an `extensions` entry to the card (A2A's own
+  enrichment mechanism), not by coupling Deployment Pipeline to Agent Builder's internal storage
+  (D-088). And no real, independently-callable agent endpoint existed anywhere in this platform
+  yet — Evals Runner's own D-077 had deferred exactly this for lack of anything real to call;
+  Deployment Pipeline is what creates the first one. Two genuine forks were walked through with
+  the user before any code: agents deploy as one shared, parameterized runtime image rather than a
+  per-agent Docker build (D-087); and Evals Runner was extended with a real `agent_runtime` target
+  type rather than leaving the eval-gate grading only the underlying model (D-089) — closing
+  D-077's deferred non-goal for real. Three small, independent pieces resolved these dependencies
+  and landed on `main` first, each its own branch, before `deployment-pipeline-service` itself was
+  built: `feat/agent-runtime` (the new shared runtime image — found live that its own
+  `oauth2_jwks_url` needed a `localhost`, not Docker-network, default, D-090),
+  `feat/agent-builder-card-extensions` (the card-schema fix), `feat/evals-runner-agent-target`
+  (the new target type, verified live against a real deployed `agent-runtime` container, D-091).
+  Building `deployment-pipeline-service` itself surfaced the same class of Docker-networking
+  mistake twice more: `wait_healthy` polled `localhost` instead of `host.docker.internal` from
+  inside the worker container (D-092), and spawned containers never joined the compose project's
+  own Docker network, so they couldn't resolve `identity-service`/`llm-gateway` by hostname at all
+  (D-093) — both found live, both fixed, both re-verified with a full real deploy → health →
+  eval-gate cycle afterward. `POST /deployments` needed an explicit `eval_suite_name` the original
+  design sketch never anticipated (D-094). All 7 done-when criteria confirmed live: a real
+  deploy → gate-pass → `running` flow with a genuine CrewAI answer judged correct; a failing gate
+  rolling the container back and never leaving it live; `POST /deployments/{id}/stop`;
+  `platform.deployment.v1` emitted on both outcomes; and a worker-restart-mid-deployment
+  durability proof — the workflow survived a killed worker with no lost state and a correct
+  rollback, though Temporal's own activity timeout fired much later than its configured deadline
+  in this single-node dev setup, an open, not-yet-root-caused watch-item rather than a resolved
+  one (D-095). **Merged to `main`.** See
   [superpowers/specs/2026-09-25-deployment-pipeline-harness-design.md](superpowers/specs/2026-09-25-deployment-pipeline-harness-design.md)
-  and decisions D-009 (pre-existing), D-077 (pre-existing), D-087..D-089.
+  and decisions D-009 (pre-existing), D-077 (pre-existing), D-087..D-095.
+- **Wave 4 is now complete and merged to `main`** (Agent Builder, Evals Runner, Deployment
+  Pipeline) — **all 16 of 16 harnesses are now built, verified, and merged to `main`.**
 
 | Area | State |
 |---|---|

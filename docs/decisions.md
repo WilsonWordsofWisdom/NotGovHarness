@@ -1230,3 +1230,87 @@ committed test (`test_agent_runtime_target.py`) follows the same skip-if-down sh
 live-stack test uses, pointed at a fixed local port with the exact `docker run` command to start
 one in its own docstring — there's no compose-managed, always-up instance to fixture against
 here, since D-087 made `agent-runtime` build-only by design.
+
+**D-092 — `deployment-pipeline-service`'s `wait_healthy` activity polled `localhost`, not
+`host.docker.internal`; found live on the first real deployment attempt.** The activity code
+runs inside `deployment-pipeline-worker`'s own container (a Temporal worker process, not the API
+process), so `localhost:<container.host_port>` referred to the worker container's own loopback —
+nothing was listening there — rather than the host where the newly-spawned `agent-runtime`
+container's port was actually published. The container was genuinely healthy the whole time
+(confirmed by curling it directly from the host); the activity just timed out
+(`Activity task timed out`) polling the wrong address. This is the same class of mistake as D-090
+and D-091 — code executing inside one container needing the correct hostname to reach a port
+published on the host — but hit in a third, structurally different spot: a Temporal *activity*,
+not a pytest process or a service-to-service call. Fixed by polling
+`http://host.docker.internal:{container.host_port}/healthz` instead. The pre-existing
+rollback-on-failure logic (stop+remove the container on any workflow-step failure) was confirmed
+to already work correctly even while this bug was live — the orphaned container from the failed
+first attempt was already gone by the time it was inspected.
+
+**D-093 — deployed `agent-runtime` containers never joined the compose project's Docker network,
+because `docker.containers.run()` was never given an explicit `network=`; found live on the
+second real deployment attempt, after D-092 was fixed.** The container came up healthy (`/healthz`
+needs no outbound calls) and passed `wait_healthy`, but the eval gate then failed with a `502`
+from `evals-runner-service` wrapping a `500` from the deployed container's own `/invoke`. Debugged
+by manually starting an equivalent debug container and replicating the exact call via curl, then
+reading its own logs: `jwt.exceptions.PyJWKClientConnectionError` — it could not resolve
+`identity-service` by hostname at all. Root cause: `docker.containers.run()` in
+`activities.py::_run_container_sync` never passed `network=`, so Docker attached the spawned
+container to its own default bridge network rather than the compose project's network
+(`notgovharness_default`, confirmed via `docker network ls` / `docker inspect` against the
+already-running `identity-service` container) — the container could reach nothing else in the
+stack by Docker Compose hostname, even though its own `/healthz` still worked. Fixed by adding a
+`docker_network: str | None = None` setting (kept `None` as the default so the service's own
+tests/tools that call `containers.run()` without a real compose network stay unaffected —
+confirmed `network=None` is accepted by docker-py the same as omitting the argument), passing
+`network=self._settings.docker_network` through to `containers.run()`, and setting
+`DOCKER_NETWORK: ${COMPOSE_PROJECT_NAME:-notgovharness}_default` on the
+`deployment-pipeline-worker` compose entry specifically (the API process itself never touches
+Docker, so it doesn't need this). Verified by re-running a full deployment end to end: the spawned
+container came up on `notgovharness_default` (confirmed via `docker inspect`), resolved
+`identity-service`/`llm-gateway` correctly, and the eval gate completed with a genuine passing
+verdict from a real CrewAI answer routed through the deployed agent.
+
+**D-094 — `POST /deployments` needs an explicit `eval_suite_name` (required) and
+`eval_suite_version` (optional, defaults to latest) in the request body; the original design
+doc's API sketch (`{agent_name, agent_version?}` only) had no way to say which suite gates a
+deployment.** Found necessary during build, not before: the design doc assumed the eval gate's
+suite was somehow implicit, but nothing about an agent card (even after D-088's extensions) names
+which eval suite should grade it, and hardcoding a suite name in `deployment-pipeline-service`
+would silently couple every deployment to one suite regardless of what the agent actually does.
+`eval_suite_name`/`eval_suite_version` thread straight through to `run_eval_gate`'s
+`EvalGateInput` unchanged; `eval_suite_version`'s optionality mirrors `evals-runner-service`'s own
+`POST /runs` convention (`suite_version: str | None = None`, `eval_registry.fetch` resolves the
+latest when omitted) rather than inventing a new one. Not a structural surprise, just a field the
+original sketch omitted — the design doc's API section has been updated to match.
+
+**D-095 — worker-restart-mid-deployment durability proof: the workflow survived correctly (no
+lost state, correct rollback, correct final persisted outcome and event), but Temporal's own
+`run_eval_gate` activity timeout fired roughly 34 minutes late against a 700s
+(`eval_gate_timeout_seconds`) configured deadline — a real, live-observed delay worth flagging,
+not assumed benign.** Deliberately killed `deployment-pipeline-worker` mid-flight (confirmed via
+its own container logs that the in-flight `run_eval_gate` activity's outbound call to the deployed
+agent had already completed — the target container's own access log shows a real `POST /invoke
+200` a few seconds before the restart) to prove the same durability property Approvals/HITL's own
+workflow already has: a workflow must not be lost or double-run just because its worker process
+dies mid-activity. The workflow **was** durable — Temporal's `DescribeWorkflowExecution` continued
+reporting the activity as `PENDING_ACTIVITY_STATE_STARTED` (never lost, never silently abandoned)
+for the entire gap, and once its timeout finally fired, the workflow's existing exception-handling
+path ran exactly as designed: `stop_container` removed the orphaned container (confirmed via
+`docker ps -a` returning nothing for it) and `persist_outcome`/`emit_deployment_event` recorded a
+correct `status: "failed", error: "eval gate failed to run: Activity task timed out"` (confirmed
+both via `GET /deployments/{id}` and a direct Kafka probe of `platform.deployment.v1`). What is
+**not** yet explained: `expirationTime` in Temporal's own `DescribeWorkflowExecution` response
+showed the correct 700s deadline (`09:56:34`, i.e. `lastStartedTime + 700s`), but the workflow
+did not actually transition out of `RUNNING` until roughly `10:18:5x` — about 22 minutes past that
+deadline — despite no observed CPU/memory contention on the Docker Desktop VM at the time
+(`docker stats` was near-idle throughout) and no errors in `temporal-1`'s own logs. This is the
+first exercise of Temporal's own schedule-to-close/start-to-close timeout in this repo (every
+prior workflow failure in this codebase, including this same service's own earlier bugs, failed
+via an in-activity exception, not via Temporal's server-side timer) — so there's no established
+baseline for how quickly this environment's single-node dev Temporal setup actually processes
+timers under real conditions. **Not yet root-caused; flagged as a watch-item, not silently
+fixed or hand-waved past** — a production deployment of this reference architecture should not
+assume a `scheduleToCloseTimeout` fires anywhere near on-time without first confirming this
+single-node dev Temporal setup's timer latency under real load, and should treat any timeout value
+as a soft floor, not a guaranteed ceiling, until this is understood.

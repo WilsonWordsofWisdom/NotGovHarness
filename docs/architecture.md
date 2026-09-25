@@ -6,11 +6,9 @@ NotGovHarness is a locally-runnable reference implementation of a complete agent
 See [decisions.md](decisions.md) for the rationale behind every choice below and
 [implementation-plan.md](implementation-plan.md) for build status/history in full detail.
 
-**Status (updated 2026-09-18):** 15 of 16 harnesses are built and merged to `main` — only
-Deployment Pipeline remains (deliberately skipped so far, at explicit user direction, in favor of
-Evals Runner). The map below marks each node ✅ built/merged or ◻ not yet built; a few anchors
-also changed from the original Phase 0 guess once real research/building settled the actual
-choice — noted inline where that happened.
+**Status (updated 2026-09-25):** all 16 of 16 harnesses are built and merged to `main`. The map
+below marks each node ✅ built/merged; a few anchors also changed from the original Phase 0 guess
+once real research/building settled the actual choice — noted inline where that happened.
 
 ## Platform map (harnesses + chosen anchors)
 
@@ -18,7 +16,7 @@ choice — noted inline where that happened.
 graph TB
     subgraph L4["④ Agent Lifecycle"]
         AB["✅ Agent Builder<br/><i>CrewAI</i>"]
-        DP["◻ Deployment Pipeline<br/><i>Docker + Temporal</i>"]
+        DP["✅ Deployment Pipeline<br/><i>Docker + Temporal</i>"]
         EV["✅ Evals<br/><i>DeepEval + Ragas</i><br/><i>(Promptfoo deferred)</i>"]
     end
     subgraph L3["③ Runtime & Policy"]
@@ -77,11 +75,11 @@ graph TB
 
 | Engine | Owning services | Started in compose |
 |---|---|---|
-| Postgres | LiteLLM, Builder, Evals, Agent Registry, Identity authz, Guardrails, ContextForge, Sandbox jobs, Approvals, Audit (hash-chained), Memory, Knowledge/RAG, Skill/Eval Registry — plus Deploy once Deployment Pipeline is built | Phase 0 (shared container, db-per-service); ✅ all rows above live except Deploy |
+| Postgres | LiteLLM, Builder, Evals, Agent Registry, Identity authz, Guardrails, ContextForge, Sandbox jobs, Approvals, Audit (hash-chained), Memory, Knowledge/RAG, Skill/Eval Registry, Deploy | Phase 0 (shared container, db-per-service); ✅ all rows above live |
 | ClickHouse + Redis + MinIO | Observability (Langfuse) | ✅ built |
 | MinIO (object store) | Skill Registry bundles, Eval Registry datasets (shared object store) | ✅ built |
 | Vector (pgvector) | Memory, Knowledge/RAG — both on pgvector (D-060); Qdrant was the Phase-0-era alternative, never actually used | ✅ built |
-| Temporal datastore | Approvals/HITL (built, D-048/D-049); Deployment Pipeline orchestration (◻ not yet — same shared Temporal instance) | ✅ built (Approvals) / ◻ (Deployment) |
+| Temporal datastore | Approvals/HITL (built, D-048/D-049); Deployment Pipeline orchestration (built, D-087..D-095 — same shared Temporal instance) | ✅ built (both) |
 | SPIRE datastore | Agent Identity | ✅ built |
 
 Compose uses **profiles** so only the engines a given active service needs are started.

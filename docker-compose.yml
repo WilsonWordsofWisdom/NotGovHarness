@@ -775,6 +775,83 @@ services:
       context: .
       dockerfile: services/agent-runtime/Dockerfile
 
+  # Deployment Pipeline (Wave 4, the last of all 16 harnesses, D-087..D-091) — packages a
+  # published, redeployable Agent Card into a real running agent-runtime container, gates it
+  # with a real Evals Runner run against the deployed agent itself, and rolls back on a failing
+  # gate. Same API + separate-worker split as Approvals/HITL; the worker owns the Docker socket
+  # (D-087, same real host privilege Sandbox already discloses) since the orchestration
+  # activities are what actually start/stop agent-runtime containers.
+  deployment-pipeline-service:
+    profiles: ["deployment"]
+    security_opt:
+      - seccomp:unconfined
+    build:
+      context: .
+      dockerfile: services/deployment-pipeline-service/Dockerfile
+    environment:
+      SERVICE_NAME: deployment-pipeline-service
+      ENV: dev
+      DATABASE_URL: postgresql+asyncpg://platform:platform@postgres:5432/deploy
+      OAUTH2_JWKS_URL: http://identity-service:8000/.well-known/jwks.json
+      TEMPORAL_ADDRESS: temporal:7233
+      AGENT_REGISTRY_URL: http://agent-registry:8000
+      EVALS_RUNNER_URL: http://evals-runner-service:8000
+      IDENTITY_URL: http://identity-service:8000
+      DEPLOYMENT_CLIENT_SECRET: ${DEPLOYMENT_CLIENT_SECRET:-deployment-pipeline-service-dev-secret}
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    ports:
+      - "8104:8000" # /deployments — published for skip-if-down tests
+    depends_on:
+      postgres:
+        condition: service_healthy
+      otel-collector:
+        condition: service_started
+      identity-service:
+        condition: service_started
+      temporal:
+        condition: service_healthy
+      agent-registry:
+        condition: service_started
+      evals-runner-service:
+        condition: service_started
+
+  deployment-pipeline-worker:
+    profiles: ["deployment"]
+    security_opt:
+      - seccomp:unconfined
+    build:
+      context: .
+      dockerfile: services/deployment-pipeline-service/Dockerfile
+    command: ["python", "-m", "deployment_pipeline_service.worker"]
+    environment:
+      SERVICE_NAME: deployment-pipeline-worker
+      ENV: dev
+      DATABASE_URL: postgresql+asyncpg://platform:platform@postgres:5432/deploy
+      TEMPORAL_ADDRESS: temporal:7233
+      AGENT_REGISTRY_URL: http://agent-registry:8000
+      EVALS_RUNNER_URL: http://evals-runner-service:8000
+      IDENTITY_URL: http://identity-service:8000
+      DEPLOYMENT_CLIENT_SECRET: ${DEPLOYMENT_CLIENT_SECRET:-deployment-pipeline-service-dev-secret}
+      KAFKA_BROKERS: redpanda:29092
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+      # Found live: a container run without an explicit network joins Docker's own default
+      # bridge, not this compose project's network, so it can't resolve identity-service/
+      # llm-gateway by their compose hostnames at all. Matches whatever this same compose
+      # invocation actually names its own network (COMPOSE_PROJECT_NAME-derived, falling back to
+      # the directory name — see this file's own header comment on that).
+      DOCKER_NETWORK: ${COMPOSE_PROJECT_NAME:-notgovharness}_default
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      postgres:
+        condition: service_healthy
+      temporal:
+        condition: service_healthy
+      redpanda:
+        condition: service_started
+
   spire-server:
     image: ghcr.io/spiffe/spire-server:1.15.1
     container_name: spire-server # referenced by name from spire-bootstrap's `docker exec`
