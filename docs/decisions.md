@@ -1208,3 +1208,25 @@ to confirm the build-only compose entry produces the identical tag) and ran an a
 with test env vars, port-published to the host — a real `POST /invoke` against it returned a
 genuine CrewAI answer ("The capital of Japan is Tokyo."), confirming the actual mechanism
 Deployment Pipeline will use (not just the FastAPI app in a test process) works end to end.
+
+**D-091 — Evals Runner's `agent_runtime` target verified against a real deployed container;
+D-077's non-goal is genuinely closed, not just structurally added.** `POST /runs` gains
+`target: {"type": "agent_runtime", "url": ...}` (default remains `"llm_gateway"`, unchanged
+behavior — confirmed by re-running this service's full existing suite unchanged, 8/8 passing,
+before trusting the addition). `AgentRuntimeTarget` mirrors `LlmGatewayTarget`'s exact
+`complete(prompt) -> str` interface and `call_with_auth_retry` usage, so `main.py`'s dispatch
+barely changes; `evals_client`'s own token gained `agent_runtime:invoke` alongside
+`llm_gateway:call` (harmless to carry both — `require_scope` only checks the one scope it needs,
+confirmed from `platform_core.auth`'s own source before relying on it). Verified live against a
+real, manually-started `agent-runtime` container (built from D-087's image): the same
+`evals-runner-smoke` suite that already proved judgment against direct `llm-gateway` produced the
+identical correct verdict (1 pass / 1 fail, both engines agreeing) when routed through a real
+deployed agent instead — proving the target genuinely calls the deployed container's own
+`/invoke`, not a disguised pass-through. A first manual verification run hit a client-side `curl`
+timeout (`--max-time 300`, the exact same mistake as an earlier TTL-wait script) — the request
+was still genuinely processing server-side and completed correctly moments later; routing
+through a CrewAI kickoff on top of the judge calls is real added latency, not a hang. The
+committed test (`test_agent_runtime_target.py`) follows the same skip-if-down shape every other
+live-stack test uses, pointed at a fixed local port with the exact `docker run` command to start
+one in its own docstring — there's no compose-managed, always-up instance to fixture against
+here, since D-087 made `agent-runtime` build-only by design.
