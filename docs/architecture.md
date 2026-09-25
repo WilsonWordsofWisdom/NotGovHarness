@@ -3,35 +3,42 @@
 NotGovHarness is a locally-runnable reference implementation of a complete agentic platform:
 16 "harnesses" across 4 dependency layers, all built on a shared Phase 0 substrate.
 
-See [decisions.md](decisions.md) for the rationale behind every choice below.
+See [decisions.md](decisions.md) for the rationale behind every choice below and
+[implementation-plan.md](implementation-plan.md) for build status/history in full detail.
+
+**Status (updated 2026-09-18):** 15 of 16 harnesses are built and merged to `main` — only
+Deployment Pipeline remains (deliberately skipped so far, at explicit user direction, in favor of
+Evals Runner). The map below marks each node ✅ built/merged or ◻ not yet built; a few anchors
+also changed from the original Phase 0 guess once real research/building settled the actual
+choice — noted inline where that happened.
 
 ## Platform map (harnesses + chosen anchors)
 
 ```mermaid
 graph TB
     subgraph L4["④ Agent Lifecycle"]
-        AB["Agent Builder<br/><i>CrewAI</i>"]
-        DP["Deployment Pipeline<br/><i>Docker + Temporal</i>"]
-        EV["Evals<br/><i>DeepEval / Promptfoo / Ragas</i>"]
+        AB["✅ Agent Builder<br/><i>CrewAI</i>"]
+        DP["◻ Deployment Pipeline<br/><i>Docker + Temporal</i>"]
+        EV["✅ Evals<br/><i>DeepEval + Ragas</i><br/><i>(Promptfoo deferred)</i>"]
     end
     subgraph L3["③ Runtime & Policy"]
-        MG["Agent Gateway<br/><i>ContextForge (A2A+MCP+Registry)</i>"]
-        GR["Guardrails<br/><i>LLM Guard / NeMo / Guardrails AI / Llama Guard</i>"]
-        MEM["Memory<br/><i>Mem0 (pgvector/Qdrant)</i>"]
-        RAG["Knowledge / RAG<br/><i>LlamaIndex + reranker</i>"]
-        SBX["Sandbox<br/><i>E2B (isolated compute)</i>"]
-        HITL["Approvals / HITL<br/><i>Temporal signals</i>"]
+        MG["✅ Agent Gateway<br/><i>ContextForge (A2A+MCP+Registry)</i>"]
+        GR["✅ Guardrails<br/><i>LLM Guard / NeMo / Guardrails AI</i><br/><i>(Llama Guard deferred)</i>"]
+        MEM["✅ Memory<br/><i>Mem0 (pgvector)</i>"]
+        RAG["✅ Knowledge / RAG<br/><i>LlamaIndex + FastEmbed reranker</i>"]
+        SBX["✅ Sandbox<br/><i>Docker-isolated execution</i><br/><i>(not E2B — D-050)</i>"]
+        HITL["✅ Approvals / HITL<br/><i>Temporal signals</i>"]
     end
     subgraph L2["② Catalog & Registries"]
-        AR["Agent Registry<br/><i>A2A Agent Cards (signed)</i>"]
-        SR["Skill Registry<br/><i>Agent Skills (SKILL.md)</i>"]
-        ER["Eval Registry<br/><i>eval suites (versioned)</i>"]
+        AR["✅ Agent Registry<br/><i>A2A Agent Cards (signed)</i>"]
+        SR["✅ Skill Registry<br/><i>Agent Skills (SKILL.md)</i>"]
+        ER["✅ Eval Registry<br/><i>eval suites (versioned)</i>"]
     end
     subgraph L1["① Foundation & Cross-cutting"]
-        ID["Agent Identity<br/><i>SPIFFE/SPIRE + OAuth2</i>"]
-        GW["LLM Gateway<br/><i>LiteLLM</i>"]
-        OBS["Observability<br/><i>Langfuse + OTel</i>"]
-        AUD["Audit plane<br/><i>hash-chained event log</i>"]
+        ID["✅ Agent Identity<br/><i>SPIFFE/SPIRE + OAuth2</i>"]
+        GW["✅ LLM Gateway<br/><i>LiteLLM</i>"]
+        OBS["✅ Observability<br/><i>Langfuse + OTel</i>"]
+        AUD["✅ Audit plane<br/><i>hash-chained event log</i>"]
     end
 
     AB --> AR & SR & MG & ER
@@ -50,7 +57,7 @@ graph TB
     L3 --> SUB
     L4 --> SUB
 
-    subgraph SUB["Phase 0 — Platform Substrate (built now)"]
+    subgraph SUB["Phase 0 — Platform Substrate (built)"]
         direction LR
         EDGE["Edge<br/>Traefik"]
         KIT["Service Kit<br/>platform-core"]
@@ -59,18 +66,23 @@ graph TB
         EVT["Events<br/>Redpanda (Kafka)"]
         OT["Obs baseline<br/>OTel + Jaeger"]
     end
+
+    classDef built fill:#e8f6ec,stroke:#146c2e,color:#146c2e;
+    classDef planned fill:#fdf3dc,stroke:#8a5a00,color:#8a5a00,stroke-dasharray: 5 5;
+    class AB,EV,MG,GR,MEM,RAG,SBX,HITL,AR,SR,ER,ID,GW,OBS,AUD built;
+    class DP planned;
 ```
 
 ## Engine map
 
 | Engine | Owning services | Started in compose |
 |---|---|---|
-| Postgres | LiteLLM, Builder, Deploy (Temporal), Agent Registry, Identity authz, Guardrails, Evals, ContextForge, Sandbox jobs, Approvals, Audit (hash-chained) | Phase 0 (shared container, db-per-service) |
-| ClickHouse + Redis + MinIO | Observability (Langfuse) | when Observability is built |
-| MinIO (object store) | Skill Registry bundles, Eval Registry datasets (shared object store) | when owning harness is built |
-| Vector (pgvector / Qdrant) | Memory, Knowledge/RAG | when owning harness is built |
-| Temporal datastore | Deployment Pipeline orchestration | when Deployment is built |
-| SPIRE datastore | Agent Identity | when Identity is built |
+| Postgres | LiteLLM, Builder, Evals, Agent Registry, Identity authz, Guardrails, ContextForge, Sandbox jobs, Approvals, Audit (hash-chained), Memory, Knowledge/RAG, Skill/Eval Registry — plus Deploy once Deployment Pipeline is built | Phase 0 (shared container, db-per-service); ✅ all rows above live except Deploy |
+| ClickHouse + Redis + MinIO | Observability (Langfuse) | ✅ built |
+| MinIO (object store) | Skill Registry bundles, Eval Registry datasets (shared object store) | ✅ built |
+| Vector (pgvector) | Memory, Knowledge/RAG — both on pgvector (D-060); Qdrant was the Phase-0-era alternative, never actually used | ✅ built |
+| Temporal datastore | Approvals/HITL (built, D-048/D-049); Deployment Pipeline orchestration (◻ not yet — same shared Temporal instance) | ✅ built (Approvals) / ◻ (Deployment) |
+| SPIRE datastore | Agent Identity | ✅ built |
 
 Compose uses **profiles** so only the engines a given active service needs are started.
 
@@ -106,7 +118,7 @@ sequenceDiagram
     loop reason / act
         RT->>GW: chat/completion (OpenAI API)
         RT->>MG: call tool via Agent Gateway (MCP/A2A)
-        RT->>SBX: run code (isolated, E2B)
+        RT->>SBX: run code (isolated, Docker — not E2B, D-050)
         RT->>HITL: approve risky action? (Temporal signal)
     end
     RT->>GR: check(output) (REST)

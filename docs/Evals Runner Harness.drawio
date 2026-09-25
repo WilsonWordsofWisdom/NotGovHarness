@@ -1,0 +1,116 @@
+<mxfile host="app.diagrams.net">
+  <diagram name="Evals Runner Harness" id="evals-runner-harness">
+    <mxGraphModel dx="1400" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1650" pageHeight="900" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="title" value="Evals Runner Harness — Architecture (Wave 4)" style="text;html=1;fontSize=18;fontStyle=1;align=left;" vertex="1" parent="1">
+          <mxGeometry x="20" y="10" width="520" height="30" as="geometry" />
+        </mxCell>
+
+        <!-- Caller -->
+        <mxCell id="caller" value="example-service&#10;(D-030 simulated caller)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="20" y="160" width="180" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- evals-runner-service container -->
+        <mxCell id="ers-container" value="evals-runner-service  (:8103)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#666666;dashed=1;verticalAlign=top;fontStyle=1;fontSize=14;align=left;spacingLeft=10;spacingTop=8;" vertex="1" parent="1">
+          <mxGeometry x="280" y="20" width="520" height="340" as="geometry" />
+        </mxCell>
+
+        <mxCell id="main-py" value="main.py&#10;POST /runs  (scope evals:run)&#10;GET /runs[/{id}]  ·  GET /ui" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="310" y="60" width="240" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="ui" value="static/index.html&#10;GET /ui — bearer-token web page&#10;submit + browse runs" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="580" y="60" width="200" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="eval-client" value="eval_registry_client.py&#10;EvalRegistryClient&#10;fetch suite + dataset" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="310" y="150" width="240" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="target" value="llm_gateway_target.py&#10;LlmGatewayTarget&#10;system-under-test (model)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="310" y="240" width="240" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="deepeval" value="metrics/deepeval_engine.py&#10;DeepEvalTargetModel (judge_model)&#10;GEval · AnswerRelevancy · Faithfulness" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="560" y="240" width="220" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="ragas" value="metrics/ragas_engine.py&#10;llm_factory (judge_model)&#10;Faithfulness · FactualCorrectness" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="560" y="150" width="220" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- External services -->
+        <mxCell id="identity" value="identity-service&#10;(:8090)&#10;own OAuth2 client (llm_gateway:call)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="900" y="20" width="240" height="70" as="geometry" />
+        </mxCell>
+
+        <mxCell id="llm-gateway" value="llm-gateway&#10;(:8099, 120s timeout — D-082)&#10;-&gt; LiteLLM -&gt; local Ollama qwen3.8" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="900" y="120" width="240" height="70" as="geometry" />
+        </mxCell>
+
+        <mxCell id="eval-registry" value="eval-registry&#10;(:8094)&#10;GET /suites, GET .../dataset (open)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="900" y="220" width="240" height="70" as="geometry" />
+        </mxCell>
+
+        <mxCell id="postgres" value="Postgres &quot;evals&quot; DB&#10;runs table (model, judge_model,&#10;case_results, pass/fail counts)" style="shape=cylinder3;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=12;boundedLbl=1;" vertex="1" parent="1">
+          <mxGeometry x="380" y="420" width="220" height="80" as="geometry" />
+        </mxCell>
+
+        <!-- Internal edges -->
+        <mxCell id="e-caller-main" value="POST /runs&#10;Bearer (scope evals:run)" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;" edge="1" parent="1" source="caller" target="main-py">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e-main-ui" value="mounted static page" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;" edge="1" parent="1" source="main-py" target="ui">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e-main-client" value="fetch suite + JSONL dataset" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;" edge="1" parent="1" source="main-py" target="eval-client">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e-main-target" value="per golden: complete(input)&#10;-&gt; actual_output" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;" edge="1" parent="1" source="main-py" target="target">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e-main-ragas" value="engine=ragas&#10;+ retry-once-on-401 (D-086)" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;" edge="1" parent="1" source="main-py" target="ragas">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e-main-deepeval" value="engine=deepeval&#10;+ retry-once-on-401 (D-086)" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;" edge="1" parent="1" source="main-py" target="deepeval">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Outbound edges -->
+        <mxCell id="e-main-identity" value="client_credentials (own client)&#10;scope llm_gateway:call" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;exitX=1;exitY=0.2;entryX=0;entryY=0.5;" edge="1" parent="1" source="main-py" target="identity">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e-target-llm" value="chat completions&#10;model (system-under-test)&#10;Bearer, reactive retry (D-063 shape)" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;exitX=1;exitY=0.3;entryX=0;entryY=0.5;" edge="1" parent="1" source="target" target="llm-gateway">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e-deepeval-llm" value="chat completions&#10;judge_model (autorater)" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;exitX=1;exitY=0.3;entryX=0;entryY=0.75;" edge="1" parent="1" source="deepeval" target="llm-gateway">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e-ragas-llm" value="chat completions&#10;judge_model (autorater)&#10;via llm_factory/instructor" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;exitX=1;exitY=0.7;entryX=0;entryY=0.9;" edge="1" parent="1" source="ragas" target="llm-gateway">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e-client-registry" value="GET /suites/{name}[/{version}]&#10;GET .../dataset (JSONL, no scope)" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="eval-client" target="eval-registry">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e-main-postgres" value="INSERT runs&#10;(id, model, judge_model,&#10;case_results, pass/fail counts)" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;" edge="1" parent="1" source="main-py" target="postgres">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
