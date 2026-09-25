@@ -21,11 +21,20 @@ from platform_core.db import Database, lifespan_hook, session_dependency
 from platform_core.errors import PlatformError
 from platform_core.llm_gateway_auth import TokenClient, looks_like_auth_failure
 
+from .agent_runtime_target import AgentRuntimeTarget
 from .config import Settings
 from .eval_registry_client import EvalRegistryClient, EvalRegistryError, Golden
 from .llm_gateway_target import LlmGatewayTarget
 from .metrics import deepeval_engine, ragas_engine
 from .models import Run
+
+
+class TargetIn(BaseModel):
+    # "llm_gateway" (default, D-077): a direct chat completion. "agent_runtime" (D-089): a real
+    # deployed agent-runtime container's own POST /invoke — the actual thing being deployed, not
+    # a stand-in for it.
+    type: str = "llm_gateway"
+    url: str | None = None
 
 
 class RunIn(BaseModel):
@@ -36,6 +45,7 @@ class RunIn(BaseModel):
     # both — but a self-preference-bias risk if they always are, so each is its own knob).
     model: str | None = None
     judge_model: str | None = None
+    target: TargetIn = TargetIn()
 
 
 def _run_out(row: Run) -> dict[str, Any]:
@@ -124,7 +134,7 @@ def build_app() -> FastAPI:
         identity_url=settings.identity_url,
         client_id=settings.evals_client_id,
         client_secret=settings.evals_client_secret,
-        scope="llm_gateway:call",
+        scope="llm_gateway:call agent_runtime:invoke",
     )
     eval_registry = EvalRegistryClient(settings.eval_registry_url)
 
@@ -141,9 +151,30 @@ def build_app() -> FastAPI:
         except EvalRegistryError as exc:
             raise PlatformError("invalid_suite", exc.reason, status_code=422) from exc
 
-        model = body.model or settings.llm_gateway_model
         judge_model = body.judge_model or settings.llm_gateway_model
-        target = LlmGatewayTarget(settings.llm_gateway_url, model, token_client)
+
+        if body.target.type == "llm_gateway":
+            model = body.model or settings.llm_gateway_model
+            target: LlmGatewayTarget | AgentRuntimeTarget = LlmGatewayTarget(
+                settings.llm_gateway_url, model, token_client
+            )
+        elif body.target.type == "agent_runtime":
+            if not body.target.url:
+                raise PlatformError(
+                    "invalid_target", "target.url is required for target.type='agent_runtime'",
+                    status_code=422,
+                )
+            # No "model" in the usual sense — the deployed container's own model is baked into
+            # it, not passed per-request; record the target itself as what was actually run.
+            model = f"agent_runtime:{body.target.url}"
+            target = AgentRuntimeTarget(body.target.url, token_client)
+        else:
+            raise PlatformError(
+                "invalid_target",
+                f"target.type {body.target.type!r} is not runnable (v1 supports "
+                "'llm_gateway' and 'agent_runtime' only)",
+                status_code=422,
+            )
 
         case_results: list[dict[str, Any]] = []
         pass_count = 0
