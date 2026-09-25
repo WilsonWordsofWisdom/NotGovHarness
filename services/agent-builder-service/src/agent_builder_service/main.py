@@ -86,13 +86,33 @@ def build_app() -> FastAPI:
 
         return await call_with_auth_retry(token_client, apply_token, call)
 
-    async def _sign_and_publish_card(name: str, description: str) -> dict[str, Any]:
+    async def _sign_and_publish_card(
+        name: str, description: str, role: str, goal: str, backstory: str, task: str
+    ) -> dict[str, Any]:
         card = {
             "name": name,
             "url": f"agent-builder-service://agents/{name}",
             "version": "0.1.0",
             "description": description,
             "capabilities": {"streaming": False, "pushNotifications": False},
+            # D-088: role/goal/backstory/task are used to construct the CrewAI agent at build
+            # time but were never persisted anywhere before this, not even on this service's own
+            # `builds` row — nothing durable said how to actually redeploy this agent, despite
+            # the plan's own control-plane diagram saying Deployment Pipeline "reads card, REST".
+            # A2A's `extensions` field is the real mechanism for platform-specific enrichment
+            # like this, not a bespoke top-level field.
+            "extensions": [
+                {
+                    "uri": "urn:notgovharness:crewai-agent-config",
+                    "description": "CrewAI construction params for redeploying this agent.",
+                    "params": {
+                        "role": role,
+                        "goal": goal,
+                        "backstory": backstory,
+                        "task": task,
+                    },
+                }
+            ],
         }
 
         async def _sign(headers: dict[str, str]) -> httpx.Response:
@@ -154,7 +174,9 @@ def build_app() -> FastAPI:
             ) from exc
 
         try:
-            published = await _sign_and_publish_card(body.name, body.description)
+            published = await _sign_and_publish_card(
+                body.name, body.description, body.role, body.goal, body.backstory, body.task
+            )
             eval_suites = await _select_eval_suites(body.name)
         except httpx.HTTPStatusError as exc:
             raise PlatformError(

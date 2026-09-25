@@ -64,7 +64,15 @@ async def test_build_kickoff_calls_a_tool_and_publishes_a_fetchable_card(
     async with httpx.AsyncClient(base_url=platform_agent_registry_url, timeout=15.0) as client:
         fetched = await client.get(f"/agents/{name}/0.1.0")
         assert fetched.status_code == 200, fetched.text
-        assert fetched.json()["card"]["name"] == name
+        card = fetched.json()["card"]
+        assert card["name"] == name
+
+        # D-088: the card must carry enough to redeploy this agent, not just describe it.
+        config = card["extensions"][0]["params"]
+        assert config["role"] == "Skill Registry auditor"
+        assert config["goal"] == "Report how many skills are currently published in Skill Registry."
+        assert config["backstory"] == "You audit this platform's own skill catalog on request."
+        assert "list_skills" in config["task"]
 
 
 async def test_builds_requires_scope_but_read_is_open_to_any_caller(
