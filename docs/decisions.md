@@ -1182,3 +1182,29 @@ direct-`llm-gateway` path) — an additive, backward-compatible change to an alr
 already-working service, verified by re-running its existing suite unchanged alongside the new
 target's own tests before trusting it, the same regression discipline every prior cross-service
 touch in this repo has used.
+
+**D-090 — `agent-runtime`'s `oauth2_jwks_url` had to default to `localhost`, not the Docker-network
+hostname every prior service's `config.py` defaults to; found live, then verified by actually
+running the built image as a real Docker container, not just via `TestClient`.** Every prior
+harness's live-stack test hits an already-running, separately-started process (via a
+`platform_testing` fixture pointed at its published port), so its `config.py`'s
+`oauth2_jwks_url` default (`http://identity-service:8000/...`, correct only inside the compose
+network) never actually gets exercised by `pytest` itself. `agent-runtime` is different by
+design — there's no always-up compose instance to fixture against, since it's a build-only image
+instantiated per deployment — so its own live test constructs `Settings()` in-process via
+`TestClient`, and hit a real, immediate `PyJWKClientConnectionError` (`nodename nor servname
+provided`) the moment it tried to verify a token, because `identity-service` isn't a resolvable
+host from outside the compose network. Fixed by defaulting `oauth2_jwks_url` to
+`http://localhost:8090/...`, matching `identity_url`/`llm_gateway_url`'s already-correct
+localhost defaults on the same file, rather than the copy-pasted Docker-network convention that
+happened to never matter for any earlier service. Real deployments will still get the
+Docker-network hostname explicitly, the same way `docker-compose.yml` always overrides every
+service's env vars regardless of code-level defaults — that's `deployment-pipeline-service`'s own
+job when it starts a real instance.
+
+Separately, and not something `TestClient` alone could prove: built the real image
+(`docker build`, and again via `docker compose --profile agent-runtime-image build agent-runtime`
+to confirm the build-only compose entry produces the identical tag) and ran an actual container
+with test env vars, port-published to the host — a real `POST /invoke` against it returned a
+genuine CrewAI answer ("The capital of Japan is Tokyo."), confirming the actual mechanism
+Deployment Pipeline will use (not just the FastAPI app in a test process) works end to end.
