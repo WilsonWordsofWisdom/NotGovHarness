@@ -1140,3 +1140,45 @@ issue several internal LLM calls this code never sees individually, so there's n
 per-call hook to wrap the way `LlmGatewayTarget` or DeepEval's own `a_generate` allow — redoing
 the whole metric once, the same "one retry is enough" scope D-063 established, is the shape that
 actually fits both engines uniformly.
+
+**D-087 — Deployment Pipeline packages agents as one shared, parameterized runtime image, not a
+per-agent Docker build.** Genuine fork, presented to the user before any code: build a real,
+distinct Docker image per deployed agent (closer to a production CI/CD pipeline, but real
+`docker build` time and image-storage cost for config that's a handful of strings), or run one
+generic `agent-runtime` image — built once, in this repo — with a specific agent's
+`role`/`goal`/`backstory`/`task` injected via environment variables at container start. The user
+chose the shared image. Every deployed instance therefore also shares one OAuth2 client identity
+(`agent-runtime`, scope `llm_gateway:call`) rather than provisioning one per deployment — all
+instances are the same *kind* of thing (an agent built by this platform's own Agent Builder), not
+independently trust-differentiated principals, so per-instance identity provisioning would be
+real over-engineering for v1. Reachability follows LLM Gateway's own precedent (D-056): a deployed
+container's port is published to the host (`ports={"8000/tcp": None}`, Docker-assigned), reachable
+by other containers at `host.docker.internal:<port>`, not a custom Docker network.
+
+**D-088 — Agent Builder's published cards (and its own `builds` table) don't persist enough to
+redeploy an agent; fixed by extending the card, not the build record.** Found reading the actual
+code, not assumed from the API: `Build.role`/`goal`/`backstory` are used to construct the CrewAI
+agent at build time but never persisted anywhere — not even on Agent Builder's own audit-trail
+table — and the published Agent Card is thinner still (`name`/`url`/`version`/`description`/
+`capabilities` only). Both the implementation plan and `architecture.md`'s control-plane diagram
+say Deployment Pipeline "reads card, REST" — but today's card carries nothing to reconstruct what
+to actually run. Fixed by adding an `extensions` entry to the card at publish time
+(`{"uri": "urn:notgovharness:crewai-agent-config", "params": {role, goal, backstory, task}}`) —
+A2A's own real mechanism for platform-specific enrichment, not a bespoke field. Chosen over
+instead reading `agent-builder-service`'s own `builds` table at deploy time, which would couple
+Deployment Pipeline to a second service's internal storage for data that belongs on the durable,
+already-signed artifact designed to travel between services.
+
+**D-089 — Evals Runner's D-077 non-goal (real A2A-agent-driving) is being closed now, not
+deferred further; decided with the user rather than assumed either way.** D-077 explicitly
+deferred real agent-driving because nothing existed yet to call — Deployment Pipeline is what
+creates the first such thing. Presented as a genuine fork: keep the eval-gate grading
+`llm-gateway` directly (Evals Runner unchanged, but the gate would only prove the underlying model
+still passes, not that the specific deployed agent's config behaves correctly) versus extending
+`evals-runner-service` now with a real `agent_runtime` target type that calls a deployed
+container's own `POST /invoke`. The user chose to extend it now. `POST /runs` gains an optional
+`target` selector; omitted, every existing caller's behavior is unchanged (still the default
+direct-`llm-gateway` path) — an additive, backward-compatible change to an already-merged,
+already-working service, verified by re-running its existing suite unchanged alongside the new
+target's own tests before trusting it, the same regression discipline every prior cross-service
+touch in this repo has used.
