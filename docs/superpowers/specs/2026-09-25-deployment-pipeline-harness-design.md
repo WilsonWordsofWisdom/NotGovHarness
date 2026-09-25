@@ -128,8 +128,12 @@ Done when, live against the running stack:
 same as every other harness) for the workflow's own readiness poll.
 
 **`deployment-pipeline-service`**:
-- `POST /deployments` (scope `deploy:create`) — `{agent_name, agent_version?}` → starts
-  `DeploymentWorkflow`, returns the initial (pending) record.
+- `POST /deployments` (scope `deploy:create`) — `{agent_name, agent_version, eval_suite_name,
+  eval_suite_version?}` → starts `DeploymentWorkflow`, returns the initial (pending) record.
+  `eval_suite_name` is required (not present at all in the original sketch here) — see D-094:
+  nothing about an agent card names which eval suite should gate its deployment, so the caller
+  must say so explicitly rather than the service guessing or hardcoding one.
+  `eval_suite_version` stays optional, mirroring Evals Runner's own `POST /runs` convention.
 - `GET /deployments` / `GET /deployments/{id}` (any authenticated caller) — read status,
   including `container_id`, `host_port`, `eval_run_id` once known.
 - `POST /deployments/{id}/stop` (scope `deploy:create`) — stops and removes a running
@@ -224,3 +228,23 @@ steps 4-10 proceed on that branch as normal.
   deployed agent's own kickoff could be similarly slow) is untested until built.
 - Temporal activity retry/timeout tuning for the Docker-orchestration activities (start/stop a
   container) hasn't been decided yet — needs real timing data from build, not guessed upfront.
+
+## Status (updated 2026-09-25)
+
+All three dependency branches (D-090/D-091 findings included) merged to `main`.
+`deployment-pipeline-service` built and live-verified end to end on `feat/wave4-deployment-pipeline`:
+a real deployment reached `status: "running"` with a genuine passing eval-gate verdict from a
+deployed `agent-runtime` container. Two real Docker-networking bugs were found and fixed live
+during this verification — D-092 (`wait_healthy` polled `localhost` instead of
+`host.docker.internal` from inside the worker container) and D-093 (spawned containers never
+joined the compose project's network, so they couldn't resolve `identity-service`/`llm-gateway` by
+hostname) — both are the same class of mistake as D-090/D-091, hit a third time in a new spot.
+D-094 documents the one real API deviation from this doc's original sketch (`eval_suite_name`/
+`eval_suite_version` required on `POST /deployments`). All 7 done-when criteria live-verified:
+a real deploy → gate-pass → `running` flow (genuine CrewAI answer, judge-scored 1.0), `POST
+/deployments/{id}/stop` (container removed, status → `stopped`), `platform.deployment.v1` emitted
+correctly on both pass and fail outcomes (direct Kafka probe), and the worker-restart-mid-deployment
+durability proof — the workflow survived a killed worker with no lost state and a correct rollback,
+though Temporal's own activity timeout fired much later than its configured deadline; see D-095,
+flagged as an open watch-item rather than resolved. Remaining before merge to `main`: committed
+pytest coverage (stub + live-stack).
