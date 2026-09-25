@@ -273,9 +273,26 @@ dependencies. Phase 0 is the concrete gate before any harness is built.
   extending model-configurability to those two new phases. **Merged to `main`.** See
   [superpowers/specs/2026-09-18-evals-runner-harness-design.md](superpowers/specs/2026-09-18-evals-runner-harness-design.md)
   and decisions D-077..D-086.
-- Remaining in Wave 4: **Deployment Pipeline** (Docker + Temporal — packages an agent into an
-  image, runs it, emits deploy events, runs Evals as a gate) — not started yet, deliberately
-  skipped so far in favor of Evals Runner.
+- **Deployment Pipeline** (Docker + Temporal — the last of all 16 harnesses) — design walked
+  through with the user and committed (design doc + D-087..D-089); service code not yet started.
+  Two real gaps surfaced reading the actual code of its two dependencies, not assumed from their
+  APIs: Agent Builder's `Build` row never persists `role`/`goal`/`backstory`, and its published
+  Agent Card is thinner still, so there was nothing durable to read that says how to actually
+  redeploy an agent — fixed by adding an `extensions` entry to the card (A2A's own enrichment
+  mechanism), not by coupling Deployment Pipeline to Agent Builder's internal storage. And no
+  real, independently-callable agent endpoint exists anywhere in this platform yet — Evals
+  Runner's own D-077 deferred exactly this for lack of anything real to call; Deployment Pipeline
+  is what creates the first one. Two genuine forks were walked through with the user before any
+  code: agents deploy as one shared, parameterized runtime image rather than a per-agent Docker
+  build (D-087); and Evals Runner is being extended now with a real agent-runtime target type
+  rather than leaving the eval-gate grading only the underlying model (D-089) — closing D-077's
+  deferred non-goal for real. Three small, independent pieces resolve these dependencies and
+  land on `main` first, each its own branch, before `deployment-pipeline-service` itself is
+  built: `feat/agent-runtime` (the new shared runtime image), `feat/agent-builder-card-extensions`
+  (the card-schema fix), `feat/evals-runner-agent-target` (the new target type, depends on
+  `agent-runtime` existing to verify against). See
+  [superpowers/specs/2026-09-25-deployment-pipeline-harness-design.md](superpowers/specs/2026-09-25-deployment-pipeline-harness-design.md)
+  and decisions D-009 (pre-existing), D-077 (pre-existing), D-087..D-089.
 
 | Area | State |
 |---|---|

@@ -760,6 +760,21 @@ services:
       eval-registry:
         condition: service_started
 
+  # Deployment Pipeline dependency (D-087) — one shared, generic runtime image, *not* a standing
+  # service: never included in any `--profile` this compose file's other entries use, so
+  # `docker compose up` never starts it. `docker compose build agent-runtime` (or the manual
+  # `docker build` this branch's own live verification used) is how the
+  # notgovharness-agent-runtime image tag actually gets produced; deployment-pipeline-service
+  # later `docker run`s instances of it directly via the Docker SDK, one per deployment, with
+  # that deployment's role/goal/backstory injected as env vars.
+  agent-runtime:
+    profiles: ["agent-runtime-image"]
+    security_opt:
+      - seccomp:unconfined
+    build:
+      context: .
+      dockerfile: services/agent-runtime/Dockerfile
+
   spire-server:
     image: ghcr.io/spiffe/spire-server:1.15.1
     container_name: spire-server # referenced by name from spire-bootstrap's `docker exec`
