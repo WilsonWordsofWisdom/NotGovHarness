@@ -49,6 +49,7 @@ def _build_out(row: Build) -> dict[str, Any]:
         "build_id": row.id,
         "name": row.name,
         "description": row.description,
+        "task": row.task,
         "kickoff_result": row.kickoff_raw_output,
         "tool_was_called": row.tool_was_called,
         "agent_card_id": row.agent_card_id,

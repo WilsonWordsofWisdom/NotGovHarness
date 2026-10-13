@@ -58,6 +58,10 @@ async def test_build_kickoff_calls_a_tool_and_publishes_a_fetchable_card(
         assert body["kickoff_result"], "kickoff produced no output"
         assert body["tool_was_called"] is True
         assert isinstance(body["eval_suites"], list)  # queried for real; may legitimately be empty
+        assert body["task"] == (
+            "Call the list_skills tool to see what skills are available, then report "
+            "how many skills you found in one short sentence."
+        )
 
     # The published card must be fetchable back, byte-for-byte the same bar every registry
     # harness already proved for its own publish path.

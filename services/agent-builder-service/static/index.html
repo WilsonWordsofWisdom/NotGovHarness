@@ -176,6 +176,13 @@
   </section>
 
   <section id="panel-new" class="panel">
+    <h2 id="form-heading" style="font-size: 1.05rem; margin: 0 0 0.3rem;">New build</h2>
+    <p class="hint" id="revise-note" style="display: none;">
+      Revising <strong id="revise-target-name"></strong>: description and instructions are
+      carried over from its latest build, but role/goal/backstory aren't -- this service doesn't
+      store them, only the published Agent Card does (and that's a different service's API). Fill
+      them in again below.
+    </p>
     <form id="build-form">
       <label for="name">Name</label>
       <input type="text" id="name" required />
@@ -183,7 +190,7 @@
       <label for="description">Description</label>
       <input type="text" id="description" required />
 
-      <label for="task">Task</label>
+      <label for="task">Instructions</label>
       <textarea id="task" required></textarea>
 
       <label for="role">Role</label>
@@ -195,9 +202,12 @@
       <label for="backstory">Backstory</label>
       <textarea id="backstory" required></textarea>
 
-      <button type="submit" class="primary">Create build</button>
+      <div style="display: flex; gap: 0.6rem; align-items: center;">
+        <button type="submit" class="primary" id="build-submit">Create build</button>
+        <button type="button" class="ghost" id="cancel-revise" style="display: none; margin-top: 1.1rem;">Cancel</button>
+      </div>
     </form>
-    <p class="hint" style="margin-top: 0.8rem;">
+    <p class="hint" style="margin-top: 0.8rem;" id="form-mode-hint">
       One submit = one <code>POST /builds</code> call that runs kickoff, then signs and publishes
       the resulting Agent Card, synchronously. There is no separate "trigger" step and no live
       log stream — neither exists on this service, so this button has only one state: waiting for
@@ -252,7 +262,75 @@
     panelNew.classList.toggle("active", !browsing);
   }
   tabBuilds.addEventListener("click", () => showTab("builds"));
-  tabNew.addEventListener("click", () => showTab("new"));
+  tabNew.addEventListener("click", () => {
+    enterCreateMode();
+    showTab("new");
+  });
+
+  // ---- new build / revise build form mode ----
+  // reviseTarget is null in "create" mode (POST /builds); set to a build's name in "revise"
+  // mode (POST /builds/{name}/revise) -- same form, same fields, different endpoint and a
+  // locked name, matching D-103's "revise, don't mutate" shape.
+  let reviseTarget = null;
+  const formHeading = document.getElementById("form-heading");
+  const reviseNote = document.getElementById("revise-note");
+  const reviseTargetName = document.getElementById("revise-target-name");
+  const nameField = document.getElementById("name");
+  const descriptionField = document.getElementById("description");
+  const taskField = document.getElementById("task");
+  const roleField = document.getElementById("role");
+  const goalField = document.getElementById("goal");
+  const backstoryField = document.getElementById("backstory");
+  const buildSubmit = document.getElementById("build-submit");
+  const cancelRevise = document.getElementById("cancel-revise");
+  const formModeHint = document.getElementById("form-mode-hint");
+
+  function enterCreateMode() {
+    reviseTarget = null;
+    formHeading.textContent = "New build";
+    reviseNote.style.display = "none";
+    cancelRevise.style.display = "none";
+    nameField.readOnly = false;
+    nameField.value = "";
+    descriptionField.value = "";
+    taskField.value = "";
+    roleField.value = "";
+    goalField.value = "";
+    backstoryField.value = "";
+    buildSubmit.textContent = "Create build";
+    formModeHint.textContent =
+      "One submit = one POST /builds call that runs kickoff, then signs and publishes the " +
+      "resulting Agent Card, synchronously. There is no separate \"trigger\" step and no live " +
+      "log stream -- neither exists on this service, so this button has only one state: " +
+      "waiting for that single response.";
+    clear(document.getElementById("build-result"));
+  }
+
+  function enterReviseMode(build) {
+    reviseTarget = build.name;
+    formHeading.textContent = "Revise build";
+    reviseTargetName.textContent = build.name;
+    reviseNote.style.display = "block";
+    cancelRevise.style.display = "inline-block";
+    nameField.value = build.name;
+    nameField.readOnly = true;
+    descriptionField.value = build.description;
+    taskField.value = build.task || "";
+    roleField.value = "";
+    goalField.value = "";
+    backstoryField.value = "";
+    buildSubmit.textContent = "Publish revision";
+    formModeHint.textContent =
+      "One submit = one POST /builds/{name}/revise call. It re-runs kickoff with these fields " +
+      "and publishes a new, higher Agent Card version -- the build you're revising from, and " +
+      "its card, are left exactly as they were.";
+    clear(document.getElementById("build-result"));
+  }
+
+  cancelRevise.addEventListener("click", () => {
+    enterCreateMode();
+    showTab("builds");
+  });
 
   // ---- builds list + detail ----
   const listEl = document.getElementById("list");
@@ -277,7 +355,7 @@
     const table = el("table");
     const thead = el("thead");
     const headRow = el("tr");
-    for (const h of ["Name", "Description", "Agent card", "Eval suites", "Tool called", "Created"]) {
+    for (const h of ["Name", "Version", "Description", "Agent card", "Eval suites", "Tool called", "Created", ""]) {
       headRow.appendChild(el("th", { text: h }));
     }
     thead.appendChild(headRow);
@@ -286,6 +364,7 @@
     for (const row of rows) {
       const tr = el("tr");
       tr.appendChild(el("td", { text: row.name }));
+      tr.appendChild(el("td", { text: row.card_version, class: "mono" }));
       tr.appendChild(el("td", { text: row.description }));
       tr.appendChild(el("td", { text: row.agent_card_id }));
       const suitesCell = el("td");
@@ -297,6 +376,15 @@
       tr.appendChild(suitesCell);
       tr.appendChild(el("td", { text: row.tool_was_called ? "yes" : "no" }));
       tr.appendChild(el("td", { text: new Date(row.created_at).toLocaleString() }));
+      const actionsCell = el("td");
+      const editBtn = el("button", { class: "ghost", text: "Edit" });
+      editBtn.addEventListener("click", (event) => {
+        event.stopPropagation();
+        enterReviseMode(row);
+        showTab("new");
+      });
+      actionsCell.appendChild(editBtn);
+      tr.appendChild(actionsCell);
       tr.addEventListener("click", () => loadDetail(row.build_id));
       tbody.appendChild(tr);
     }
@@ -317,15 +405,24 @@
     }
 
     const box = el("div", { class: "detail" });
-    box.appendChild(el("h2", { text: build.name }));
+    const titleRow = el("div", { attrs: { style: "display: flex; justify-content: space-between; align-items: baseline; gap: 1rem;" } });
+    titleRow.appendChild(el("h2", { text: build.name }));
+    const editBtn = el("button", { class: "ghost", text: "Edit" });
+    editBtn.addEventListener("click", () => {
+      enterReviseMode(build);
+      showTab("new");
+    });
+    titleRow.appendChild(editBtn);
+    box.appendChild(titleRow);
 
     const meta = el("div", { class: "meta" });
     meta.appendChild(el("span", { text: "build " + build.build_id }));
+    meta.appendChild(el("span", { text: "version " + build.card_version }));
     box.appendChild(meta);
 
     const fields = [
       ["Description", build.description],
-      ["Task", build.task],
+      ["Instructions", build.task],
       ["Agent card", build.agent_card_id],
       ["Tool called", build.tool_was_called ? "yes" : "no"],
       ["Created", new Date(build.created_at).toLocaleString()],
@@ -371,19 +468,23 @@
     event.preventDefault();
     clear(resultEl);
 
-    const body = {
-      name: document.getElementById("name").value.trim(),
-      description: document.getElementById("description").value.trim(),
-      task: document.getElementById("task").value.trim(),
-      role: document.getElementById("role").value.trim(),
-      goal: document.getElementById("goal").value.trim(),
-      backstory: document.getElementById("backstory").value.trim(),
+    const fields = {
+      description: descriptionField.value.trim(),
+      task: taskField.value.trim(),
+      role: roleField.value.trim(),
+      goal: goalField.value.trim(),
+      backstory: backstoryField.value.trim(),
     };
 
-    const submitBtn = form.querySelector("button[type=submit]");
-    submitBtn.disabled = true;
+    const isRevise = reviseTarget !== null;
+    const url = isRevise
+      ? "/builds/" + encodeURIComponent(reviseTarget) + "/revise"
+      : "/builds";
+    const body = isRevise ? fields : Object.assign({ name: nameField.value.trim() }, fields);
+
+    buildSubmit.disabled = true;
     try {
-      const resp = await fetch("/builds", {
+      const resp = await fetch(url, {
         method: "POST",
         headers: Object.assign({ "Content-Type": "application/json" }, authHeaders()),
         body: JSON.stringify(body),
@@ -396,16 +497,17 @@
       const data = await resp.json();
       resultEl.appendChild(el("div", {
         class: "result ok",
-        text: "Created " + data.name + " -- agent card " + data.agent_card_id + ".",
+        text: (isRevise ? "Published revision " : "Created ") + data.card_version +
+              " of " + data.name + " -- agent card " + data.agent_card_id + ".",
       }));
-      form.reset();
+      enterCreateMode();
       showTab("builds");
       await loadList();
       await loadDetail(data.build_id);
     } catch (err) {
       resultEl.appendChild(el("div", { class: "result err", text: "Network error: " + err.message }));
     } finally {
-      submitBtn.disabled = false;
+      buildSubmit.disabled = false;
     }
   });
 
