@@ -1468,3 +1468,26 @@ every pre-existing row reads correctly) makes the version visible without re-der
 registry on every read. Verified against the real running stack, not just unit tests: a 404
 `agent_not_found` for a name with no prior build, and a genuine two-build history (`0.1.0` then
 `0.2.0`) where both cards stayed independently fetchable from `agent-registry` afterward.
+
+---
+
+## 2026-10-13 — `backstory` removed from the UI; made optional with a generated default (D-104)
+
+**D-104 — `backstory` is now optional on `BuildIn`/`ReviseIn` (`str | None = None`), defaulted to
+a generated `f"An AI agent acting as {role}, focused on: {goal}"` when omitted, and removed from
+the `/ui` form entirely.** Checked directly against the installed `crewai` package before
+changing anything: `Agent.model_fields["backstory"].is_required()` is `True`, no library
+default — this is CrewAI's own required constructor field, not something this harness invented,
+so it can't be dropped from the actual `Agent(...)` call without every kickoff failing
+`ValidationError`. It was also never a column on this service's own `builds` table at all (only
+`task`/`description`/etc. are persisted there) — the confusion was reasonable, since the only
+places `backstory` is visible are the request body and the published Agent Card's `extensions`
+over in Agent Registry, a different service's API. **Why generate rather than just require it:**
+the user found no value in writing one by hand across two rounds of feedback (first asking to
+replace it with file upload, D-102; then asking to remove it outright) — a plausible default
+derived from the two fields already being typed (role, goal) costs the user nothing and still
+gives CrewAI a real, non-empty string. Verified live: a build submitted with no `backstory` key
+in the request body at all gets a real generated one in its published card's
+`extensions[0].params.backstory`, confirmed to actually contain the role and goal (not a
+placeholder), and the exact no-`backstory` payload shape the page's JS now sends was replayed
+against the running service to confirm the wire contract, not just the Python-side defaulting.

@@ -179,9 +179,9 @@
     <h2 id="form-heading" style="font-size: 1.05rem; margin: 0 0 0.3rem;">New build</h2>
     <p class="hint" id="revise-note" style="display: none;">
       Revising <strong id="revise-target-name"></strong>: description and instructions are
-      carried over from its latest build, but role/goal/backstory aren't -- this service doesn't
-      store them, only the published Agent Card does (and that's a different service's API). Fill
-      them in again below.
+      carried over from its latest build, but role/goal aren't -- this service doesn't store
+      them, only the published Agent Card does (and that's a different service's API). Fill them
+      in again below.
     </p>
     <form id="build-form">
       <label for="name">Name</label>
@@ -198,9 +198,10 @@
 
       <label for="goal">Goal</label>
       <input type="text" id="goal" required />
-
-      <label for="backstory">Backstory</label>
-      <textarea id="backstory" required></textarea>
+      <p class="hint" style="margin: 0.3rem 0 0;">
+        No backstory field -- CrewAI requires one to construct the agent, but there's no reason
+        to make you write it. A default is generated from Role and Goal automatically.
+      </p>
 
       <div style="display: flex; gap: 0.6rem; align-items: center;">
         <button type="submit" class="primary" id="build-submit">Create build</button>
@@ -280,7 +281,6 @@
   const taskField = document.getElementById("task");
   const roleField = document.getElementById("role");
   const goalField = document.getElementById("goal");
-  const backstoryField = document.getElementById("backstory");
   const buildSubmit = document.getElementById("build-submit");
   const cancelRevise = document.getElementById("cancel-revise");
   const formModeHint = document.getElementById("form-mode-hint");
@@ -296,7 +296,6 @@
     taskField.value = "";
     roleField.value = "";
     goalField.value = "";
-    backstoryField.value = "";
     buildSubmit.textContent = "Create build";
     formModeHint.textContent =
       "One submit = one POST /builds call that runs kickoff, then signs and publishes the " +
@@ -318,7 +317,6 @@
     taskField.value = build.task || "";
     roleField.value = "";
     goalField.value = "";
-    backstoryField.value = "";
     buildSubmit.textContent = "Publish revision";
     formModeHint.textContent =
       "One submit = one POST /builds/{name}/revise call. It re-runs kickoff with these fields " +
@@ -450,7 +448,7 @@
 
     const note = el("p", {
       class: "hint",
-      text: "Role/goal/backstory aren't shown here -- this service never persists them. " +
+      text: "Role/goal aren't shown here -- this service never persists them. " +
             "They're only recoverable from the published Agent Card's extensions, in the Agent Registry.",
     });
     box.appendChild(note);
@@ -473,7 +471,6 @@
       task: taskField.value.trim(),
       role: roleField.value.trim(),
       goal: goalField.value.trim(),
-      backstory: backstoryField.value.trim(),
     };
 
     const isRevise = reviseTarget !== null;

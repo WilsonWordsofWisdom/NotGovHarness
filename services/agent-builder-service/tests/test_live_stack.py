@@ -79,6 +79,41 @@ async def test_build_kickoff_calls_a_tool_and_publishes_a_fetchable_card(
         assert "list_skills" in config["task"]
 
 
+async def test_build_without_backstory_gets_a_real_generated_default(
+    platform_identity_url, platform_agent_builder_url, platform_agent_registry_url
+):
+    """D-104: backstory is optional now -- the UI doesn't even ask for it -- but CrewAI's Agent
+    still requires one under the hood, so a real one must still land in the published card."""
+    token = await _token(
+        platform_identity_url, "example-service", "example-service-dev-secret", "builder:build"
+    )
+    headers = {"Authorization": f"Bearer {token}"}
+    marker = uuid.uuid4().hex[:8]
+    name = f"agent-builder-no-backstory-test-{marker}"
+
+    async with httpx.AsyncClient(base_url=platform_agent_builder_url, timeout=120.0) as client:
+        built = await client.post(
+            "/builds",
+            json={
+                "name": name,
+                "description": "Built with no backstory field in the request at all.",
+                "task": "Say hello in one short sentence.",
+                "role": "Greeter",
+                "goal": "Greet the caller.",
+            },
+            headers=headers,
+        )
+        assert built.status_code == 201, built.text
+
+    async with httpx.AsyncClient(base_url=platform_agent_registry_url, timeout=15.0) as client:
+        card = await client.get(f"/agents/{name}/0.1.0")
+        assert card.status_code == 200, card.text
+        backstory = card.json()["card"]["extensions"][0]["params"]["backstory"]
+        assert backstory, "a real backstory must still reach CrewAI's Agent"
+        assert "Greeter" in backstory
+        assert "Greet the caller." in backstory
+
+
 async def test_revise_bumps_version_and_preserves_build_history(
     platform_identity_url, platform_agent_builder_url, platform_agent_registry_url
 ):

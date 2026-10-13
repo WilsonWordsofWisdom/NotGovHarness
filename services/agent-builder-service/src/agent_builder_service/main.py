@@ -33,7 +33,7 @@ class BuildIn(BaseModel):
     task: str
     role: str
     goal: str
-    backstory: str
+    backstory: str | None = None
 
 
 class ReviseIn(BaseModel):
@@ -41,7 +41,15 @@ class ReviseIn(BaseModel):
     task: str
     role: str
     goal: str
-    backstory: str
+    backstory: str | None = None
+
+
+def _default_backstory(role: str, goal: str) -> str:
+    # D-104: CrewAI's Agent.backstory is a required constructor field with no library default
+    # (confirmed against the installed package: Agent.model_fields["backstory"].is_required() is
+    # True) -- callers aren't required to write one, this fills the gap so crew_layer.run() can
+    # still construct a real Agent.
+    return f"An AI agent acting as {role}, focused on: {goal}"
 
 
 def _build_out(row: Build) -> dict[str, Any]:
@@ -217,13 +225,14 @@ def build_app() -> FastAPI:
         task: str,
         role: str,
         goal: str,
-        backstory: str,
+        backstory: str | None,
         version: str,
         session: AsyncSession,
     ) -> Build:
         # Shared by create and revise (D-103) -- identical kickoff -> sign/publish -> persist
         # shape, differing only in where `name`/`version` come from and whether a prior card is
         # required to already exist.
+        backstory = backstory or _default_backstory(role, goal)
         try:
             kickoff = await crew_layer.run(task=task, role=role, goal=goal, backstory=backstory)
         except Exception as exc:  # noqa: BLE001
