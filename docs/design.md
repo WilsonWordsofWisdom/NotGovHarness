@@ -41,25 +41,49 @@ animation beyond a short opacity/transform transition on panel switches.
 
 ## Agent Builder UI — `agent-builder-service`
 
-Landing view: **Builds** list.
+**Status: built** (`feat/ui-agent-builder`, merged through several corrections — D-101, D-103,
+D-104 — each found by reading the real code/library before trusting the previous draft of this
+section). Landing view: **Builds** list.
 
-1. **Builds list** — table: name, role (truncated), status badge (`pending`/`running`/
-   `published`/`failed`), created time. Empty state: "No builds yet" + pointer to the New Build
-   tab. Row click → detail.
-2. **Build detail** — role / goal / backstory / task shown as read-only fields (these are
-   immutable once a build runs — the API has no `PATCH /builds/{id}`); resulting
-   `agent_card_id` as a link to the Agent Registry UI's card detail (cross-navigation between the
-   two new UIs); status + raw error reason if `failed`.
-3. **New Build form** — bearer-token field, then name/description/role/goal/backstory/task text
-   inputs. Submitting calls `POST /builds` once and shows a spinner — **the only state this
-   button has**, because the backend runs kickoff → sign → publish synchronously in that one call
-   (confirmed reading `agent-builder-service/src/.../main.py`); the UI does not pretend there's a
-   separate "trigger" or a live log stream, since neither exists server-side. Success routes to
-   the new build's detail view; failure shows the real `reason`/`message` from the API's error
-   envelope inline, not a generic toast.
+`Build` has **no `status` column** — `POST /builds` either succeeds (kickoff → sign → publish all
+in one call) and persists a row, or raises before any row is ever constructed, so a failed
+attempt is never listed, only ever returned once as an error response (D-101). Role/goal are
+likewise never persisted on a `Build` row — only recoverable from the published Agent Card's
+`extensions`, over in Agent Registry (a different service's API). `backstory` is **not a field at
+all** in the UI or in `Build`'s schema: it's CrewAI's own required `Agent` constructor field
+(confirmed against the installed library, D-104), auto-generated server-side from role/goal when
+omitted so the user never has to write one.
 
-Non-goals (explicitly not designed): editing a build, re-running a build, streaming CrewAI logs —
-none of these exist in the API today, and the brief is "design what can actually ship."
+Every route on this service (`GET /builds`, `GET /builds/{id}`, `POST /builds`,
+`POST /builds/{name}/revise`) requires a valid bearer token — unlike Skill Registry, where
+browsing is public. So the page has one bearer-token field used for every call, not one scoped to
+a single tab.
+
+1. **Builds list** — table of actually-persisted (successful) builds: name, `card_version`,
+   description, agent card id, eval suites (chips), whether a tool was called, created time, and
+   an **Edit** action per row. Empty/error states included.
+2. **Build detail** — `GET /builds/{id}`'s real fields: name, `card_version`, description,
+   `task` (labeled "Instructions" in the UI — the wire field is unchanged), `kickoff_result` (the
+   full raw CrewAI output, the only place the agent's actual output is visible), `tool_was_called`,
+   `agent_card_id`, `eval_suites`, and an **Edit** button. No status badge — every row here
+   already succeeded. A note explains role/goal aren't shown (never persisted here).
+3. **New Build form** — bearer-token field, then name/description/instructions/role/goal (no
+   backstory field, D-104). Submitting calls `POST /builds` once and shows a spinner — **the
+   only state this button has**, since kickoff → sign → publish happens synchronously in that one
+   call; there's no separate "trigger" step or live log stream, because neither exists
+   server-side. Failure (`kickoff_failed`/`publish_failed`, both 502) shows the real
+   `error.code`/`error.message` inline; nothing is added to the Builds list on failure.
+4. **Edit (revise) mode** — the same form, triggered from a Builds-list row or the detail view's
+   Edit button: name locks to the build being revised, description/instructions pre-fill from its
+   latest build, role/goal start blank (not recoverable here, said plainly in the form).
+   Submitting calls `POST /builds/{name}/revise` instead — a new, higher-versioned `Build` row
+   and Agent Card are created; the one being revised from is left untouched (D-103, matching
+   `Build`'s own append-only-audit-trail shape — same pattern as Sandbox's `executions`/
+   Guardrails' `checks`).
+
+Non-goals (explicitly not designed): streaming CrewAI logs, a token-minting helper, re-deriving
+role/goal from the Agent Registry to pre-fill Edit mode (a same-origin-only `/ui` page calling
+another service's API directly was judged out of scope — flagged, not silently done).
 
 ## Agent Gateway UI (MCP registry) — `agent-gateway`
 

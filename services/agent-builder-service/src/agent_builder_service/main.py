@@ -6,10 +6,12 @@ decisions D-054, D-070..D-074.
 from __future__ import annotations
 
 import uuid
+from pathlib import Path
 from typing import Any
 
 import httpx
 from fastapi import Depends, FastAPI
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -31,7 +33,23 @@ class BuildIn(BaseModel):
     task: str
     role: str
     goal: str
-    backstory: str
+    backstory: str | None = None
+
+
+class ReviseIn(BaseModel):
+    description: str
+    task: str
+    role: str
+    goal: str
+    backstory: str | None = None
+
+
+def _default_backstory(role: str, goal: str) -> str:
+    # D-104: CrewAI's Agent.backstory is a required constructor field with no library default
+    # (confirmed against the installed package: Agent.model_fields["backstory"].is_required() is
+    # True) -- callers aren't required to write one, this fills the gap so crew_layer.run() can
+    # still construct a real Agent.
+    return f"An AI agent acting as {role}, focused on: {goal}"
 
 
 def _build_out(row: Build) -> dict[str, Any]:
@@ -39,12 +57,21 @@ def _build_out(row: Build) -> dict[str, Any]:
         "build_id": row.id,
         "name": row.name,
         "description": row.description,
+        "task": row.task,
         "kickoff_result": row.kickoff_raw_output,
         "tool_was_called": row.tool_was_called,
         "agent_card_id": row.agent_card_id,
         "eval_suites": row.eval_suite_names,
+        "card_version": row.card_version,
         "created_at": row.created_at.isoformat(),
     }
+
+
+def bump_version(version: str) -> str:
+    """D-103: a revise always bumps the minor component and resets patch to 0 (0.1.0 -> 0.2.0)
+    -- a revised role/goal/backstory/task is a behavioral change, not a patch-level fix."""
+    major, minor, _patch = version.split(".")
+    return f"{major}.{int(minor) + 1}.0"
 
 
 def build_app() -> FastAPI:
@@ -67,32 +94,67 @@ def build_app() -> FastAPI:
 
     app = create_app(settings, readiness_checks=[db.check], lifespan_hooks=[lifespan_hook(db)])
 
-    async def _authed_call(
+    async def _authed_call_raw(
         method_call: Any,
     ) -> httpx.Response:
         # D-063's reactive-retry shape, reused here (not just ensure_token() once) — this
         # service's own token client is a long-lived singleton across every build request, so a
         # cached-but-actually-expired token (Docker VM clock suspension, D-063) can surface on
-        # any of these three downstream calls, not just llm-gateway's.
+        # any of these three downstream calls, not just llm-gateway's. Callers decide for
+        # themselves whether a given response status should raise (most should; D-103's version
+        # lookup treats 404 as a real "no prior build" answer, not a failure).
         headers: dict[str, str] = {}
 
         def apply_token(token: str) -> None:
             headers["Authorization"] = f"Bearer {token}"
 
         async def call() -> httpx.Response:
+            return await method_call(headers)
+
+        return await call_with_auth_retry(token_client, apply_token, call)
+
+    async def _authed_call(
+        method_call: Any,
+    ) -> httpx.Response:
+        async def raising(headers: dict[str, str]) -> httpx.Response:
             resp = await method_call(headers)
             resp.raise_for_status()
             return resp
 
-        return await call_with_auth_retry(token_client, apply_token, call)
+        return await _authed_call_raw(raising)
+
+    async def _latest_card_version(name: str) -> str | None:
+        # D-103: looks up the version to revise *from* -- a 404 here means "no prior build with
+        # this name," a real, expected answer (not an error), so it must not raise on 404 the way
+        # every other 4xx/5xx does (that would also break call_with_auth_retry's own 401 check,
+        # which relies on `call()` actually raising to detect an auth failure).
+        async def _get(headers: dict[str, str]) -> httpx.Response:
+            async with httpx.AsyncClient(
+                base_url=settings.agent_registry_url, timeout=15.0
+            ) as client:
+                resp = await client.get(f"/agents/{name}", headers=headers)
+                if resp.status_code != 404:
+                    resp.raise_for_status()
+                return resp
+
+        resp = await _authed_call_raw(_get)
+        if resp.status_code == 404:
+            return None
+        return str(resp.json()["card"]["version"])
 
     async def _sign_and_publish_card(
-        name: str, description: str, role: str, goal: str, backstory: str, task: str
+        name: str,
+        description: str,
+        role: str,
+        goal: str,
+        backstory: str,
+        task: str,
+        version: str = "0.1.0",
     ) -> dict[str, Any]:
         card = {
             "name": name,
             "url": f"agent-builder-service://agents/{name}",
-            "version": "0.1.0",
+            "version": version,
             "description": description,
             "capabilities": {"streaming": False, "pushNotifications": False},
             # D-088: role/goal/backstory/task are used to construct the CrewAI agent at build
@@ -136,7 +198,7 @@ def build_app() -> FastAPI:
                 raise
             # Same name+version already published (e.g. a retried build) — not a build failure;
             # the card exists and is fetchable, which is all criterion 3 requires.
-            return {"name": name, "version": "0.1.0"}
+            return {"name": name, "version": version}
         return published.json()
 
     async def _select_eval_suites(capability_tag: str) -> list[str]:
@@ -155,19 +217,24 @@ def build_app() -> FastAPI:
         resp = await _authed_call(_list)
         return [suite["name"] for suite in resp.json()]
 
-    @app.post("/builds", tags=["agent-builder"], status_code=201)
-    async def create_build(
-        body: BuildIn,
-        identity: CallerIdentity = Depends(require_build_scope),
-        session: AsyncSession = Depends(get_session),
-    ) -> dict[str, Any]:
+    async def _run_build(
+        *,
+        name: str,
+        requester: str,
+        description: str,
+        task: str,
+        role: str,
+        goal: str,
+        backstory: str | None,
+        version: str,
+        session: AsyncSession,
+    ) -> Build:
+        # Shared by create and revise (D-103) -- identical kickoff -> sign/publish -> persist
+        # shape, differing only in where `name`/`version` come from and whether a prior card is
+        # required to already exist.
+        backstory = backstory or _default_backstory(role, goal)
         try:
-            kickoff = await crew_layer.run(
-                task=body.task,
-                role=body.role,
-                goal=body.goal,
-                backstory=body.backstory,
-            )
+            kickoff = await crew_layer.run(task=task, role=role, goal=goal, backstory=backstory)
         except Exception as exc:  # noqa: BLE001
             raise PlatformError(
                 "kickoff_failed", f"crew execution failed: {exc}", status_code=502
@@ -175,9 +242,9 @@ def build_app() -> FastAPI:
 
         try:
             published = await _sign_and_publish_card(
-                body.name, body.description, body.role, body.goal, body.backstory, body.task
+                name, description, role, goal, backstory, task, version=version
             )
-            eval_suites = await _select_eval_suites(body.name)
+            eval_suites = await _select_eval_suites(name)
         except httpx.HTTPStatusError as exc:
             raise PlatformError(
                 "publish_failed", f"card sign/publish/eval-select failed: {exc}", status_code=502
@@ -185,18 +252,69 @@ def build_app() -> FastAPI:
 
         row = Build(
             id=str(uuid.uuid4()),
-            requester=identity.id,
-            name=body.name,
-            description=body.description,
-            task=body.task,
+            requester=requester,
+            name=name,
+            description=description,
+            task=task,
             kickoff_raw_output=kickoff.raw_output,
             tool_was_called=kickoff.tool_was_called,
-            agent_card_id=str(published.get("id", published.get("name", body.name))),
+            agent_card_id=str(published.get("id", published.get("name", name))),
             eval_suite_names=eval_suites,
+            card_version=version,
         )
         session.add(row)
         await session.commit()
         await session.refresh(row)
+        return row
+
+    @app.post("/builds", tags=["agent-builder"], status_code=201)
+    async def create_build(
+        body: BuildIn,
+        identity: CallerIdentity = Depends(require_build_scope),
+        session: AsyncSession = Depends(get_session),
+    ) -> dict[str, Any]:
+        row = await _run_build(
+            name=body.name,
+            requester=identity.id,
+            description=body.description,
+            task=body.task,
+            role=body.role,
+            goal=body.goal,
+            backstory=body.backstory,
+            version="0.1.0",
+            session=session,
+        )
+        return _build_out(row)
+
+    @app.post("/builds/{name}/revise", tags=["agent-builder"], status_code=201)
+    async def revise_build(
+        name: str,
+        body: ReviseIn,
+        identity: CallerIdentity = Depends(require_build_scope),
+        session: AsyncSession = Depends(get_session),
+    ) -> dict[str, Any]:
+        # D-103: "editing" is a new, append-only revision, not an in-place mutation -- Build is
+        # this harness's own audit trail (same shape as Sandbox's executions/Guardrails' checks),
+        # and Agent Registry already supports multiple versions per name. The old row and the old
+        # published card are left exactly as they were.
+        current_version = await _latest_card_version(name)
+        if current_version is None:
+            raise PlatformError(
+                "agent_not_found",
+                f"no prior build named {name!r} to revise -- use POST /builds to create one",
+                status_code=404,
+            )
+        row = await _run_build(
+            name=name,
+            requester=identity.id,
+            description=body.description,
+            task=body.task,
+            role=body.role,
+            goal=body.goal,
+            backstory=body.backstory,
+            version=bump_version(current_version),
+            session=session,
+        )
         return _build_out(row)
 
     @app.get("/builds", tags=["agent-builder"])
@@ -219,6 +337,13 @@ def build_app() -> FastAPI:
                 "build_not_found", f"no build with id {build_id!r}", status_code=404
             )
         return _build_out(row)
+
+    static_dir = Path(__file__).resolve().parents[2] / "static"
+    if static_dir.is_dir():
+        # Mounted last, after every API route above: Starlette matches routes in registration
+        # order, so /builds and friends are still handled by the API -- this only catches paths
+        # nothing else claimed (/ui, /ui/index.html). Same shape as Skill Registry's /ui (D-037).
+        app.mount("/ui", StaticFiles(directory=static_dir, html=True), name="ui")
 
     return app
 

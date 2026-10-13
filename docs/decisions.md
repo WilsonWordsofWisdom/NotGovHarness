@@ -1404,3 +1404,90 @@ inventing anything new — useful for operating the registry directly when Agent
 one publishing (e.g. a manually-authored card during a demo). It is placed behind a secondary tab,
 not the landing view, so the UI doesn't imply hand-publishing is the normal way agents get
 registered.
+
+---
+
+## 2026-10-13 — Agent Builder UI (`feat/ui-agent-builder`, first of the five new `/ui` pages built)
+
+**D-101 — The Agent Builder UI's design was wrong about `Build`'s actual shape, found while
+building, not before — corrected in `design.md` rather than silently patched.** The earlier
+design pass (D-096..D-100) assumed a `status` field (`pending`/`running`/`published`/`failed`)
+and that role/goal/backstory were visible on a build. Reading `models.py`'s `Build` table
+directly before writing the page showed neither exists: no `status` column at all, and no
+`role`/`goal`/`backstory` columns either — `main.py`'s `create_build` only ever constructs and
+persists a `Build` row *after* kickoff, sign, and publish have all already succeeded; any
+exception along the way raises a `PlatformError` (`kickoff_failed`/`publish_failed`, both 502)
+straight to the caller, before a row is ever added to the session. **Why this matters for the
+UI:** a failed build is not a state you can browse back to — it only ever exists as the one-time
+error response the submitter got, so the Builds list has no "failed" rows and the New Build
+form's error handling is not optional polish, it's the only place that failure is ever visible.
+Role/goal/backstory aren't shown on the build detail screen either, since the API genuinely has
+nowhere to read them back from (they're only recoverable from the published Agent Card's
+`extensions`, D-088) — showing them would mean fabricating a field the response never sends.
+
+---
+
+## 2026-10-13 — Two follow-up requests on the Agent Builder UI: KIV'd one, built the other first
+
+Raised while reviewing the New Build form before it existed in the real `/ui`: rename
+`task` to "Instructions" (cosmetic, not logged separately), replace `backstory` with uploaded
+reference files as the agent's static knowledge base, and add a real "edit a created agent"
+view. The last two turned out to be genuine backend features, not form changes, so each got its
+own decision before any UI code.
+
+**D-102 — Real per-agent knowledge-base grounding is KIV'd (not built), because
+`knowledge-service` has no per-agent scoping to hook into today.** Read `knowledge-service`'s
+actual `IngestIn`/`QueryIn`/`rag_layer.py` before concluding anything: it is one global corpus
+with a two-tier `shared`/`private`+`ingested_by` visibility model and no collection/tag concept at
+all — `RagLayer.query()` filters only on that visibility, never on which agent a document belongs
+to. Wiring file uploads straight into it as-is would let one agent's reference material leak into
+every other agent's answers, including ones built later by someone else. **Why defer rather than
+build a quick version:** doing this for real needs a scope/tag field added to `knowledge-service`
+(`IngestIn` + a query-time filter in `rag_layer.py`) *and* a new CrewAI tool in
+`agent-builder-service` (same shape as the existing `AgentGatewayTool`, D-072) to retrieve
+scoped to that tag at kickoff time — a cross-service feature, not a page edit. Logged here so it
+isn't silently dropped: `backstory` stays as CrewAI's real, required persona field in the New
+Build form for now, exactly as D-096..D-101 already designed it.
+
+**D-103 — "Editing" a build is a new, versioned revision (`POST /builds/{name}/revise`), never an
+in-place mutation — built on a sub-branch (`feat/ui-agent-builder-revise`, off
+`feat/ui-agent-builder`) before any UI edit view, so the edit screen has a real endpoint under it
+from the start.** `Build`'s own docstring already calls it "this harness's own audit trail — one
+row per build request and its outcome," the same append-only shape as Sandbox's `executions`/
+Guardrails' `checks`; mutating a row in place would be the first harness in this codebase to
+break that pattern. Agent Registry also already supports multiple versions per name
+(`GET /agents/{name}/{version}`) — `agent-builder-service` just never used that, hardcoding every
+card to `0.1.0`. `revise` looks up the latest published version for that name via
+`GET /agents/{name}`, bumps it (`bump_version`: minor+1, patch reset to 0 — a revised
+role/goal/backstory/task is a behavior change, not a patch-level fix), re-runs kickoff with the
+edited fields, and publishes a new card version plus a new `Build` row; the original row and card
+are untouched. `_sign_and_publish_card` and the create/revise kickoff-publish-persist sequence
+were refactored into one shared `_run_build` helper rather than duplicating that ~20-line flow at
+a second call site. A new `card_version` column (migration `0002`, `server_default='0.1.0'` so
+every pre-existing row reads correctly) makes the version visible without re-deriving it from the
+registry on every read. Verified against the real running stack, not just unit tests: a 404
+`agent_not_found` for a name with no prior build, and a genuine two-build history (`0.1.0` then
+`0.2.0`) where both cards stayed independently fetchable from `agent-registry` afterward.
+
+---
+
+## 2026-10-13 — `backstory` removed from the UI; made optional with a generated default (D-104)
+
+**D-104 — `backstory` is now optional on `BuildIn`/`ReviseIn` (`str | None = None`), defaulted to
+a generated `f"An AI agent acting as {role}, focused on: {goal}"` when omitted, and removed from
+the `/ui` form entirely.** Checked directly against the installed `crewai` package before
+changing anything: `Agent.model_fields["backstory"].is_required()` is `True`, no library
+default — this is CrewAI's own required constructor field, not something this harness invented,
+so it can't be dropped from the actual `Agent(...)` call without every kickoff failing
+`ValidationError`. It was also never a column on this service's own `builds` table at all (only
+`task`/`description`/etc. are persisted there) — the confusion was reasonable, since the only
+places `backstory` is visible are the request body and the published Agent Card's `extensions`
+over in Agent Registry, a different service's API. **Why generate rather than just require it:**
+the user found no value in writing one by hand across two rounds of feedback (first asking to
+replace it with file upload, D-102; then asking to remove it outright) — a plausible default
+derived from the two fields already being typed (role, goal) costs the user nothing and still
+gives CrewAI a real, non-empty string. Verified live: a build submitted with no `backstory` key
+in the request body at all gets a real generated one in its published card's
+`extensions[0].params.backstory`, confirmed to actually contain the role and goal (not a
+placeholder), and the exact no-`backstory` payload shape the page's JS now sends was replayed
+against the running service to confirm the wire contract, not just the Python-side defaulting.
