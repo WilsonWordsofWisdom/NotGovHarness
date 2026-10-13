@@ -1314,3 +1314,93 @@ fixed or hand-waved past** — a production deployment of this reference archite
 assume a `scheduleToCloseTimeout` fires anywhere near on-time without first confirming this
 single-node dev Temporal setup's timer latency under real load, and should treat any timeout value
 as a soft floor, not a guaranteed ceiling, until this is understood.
+
+---
+
+## 2026-10-13 — Platform Console: web UI for Agent Builder, Agent Gateway (MCP), Eval Registry,
+## Agent Registry, Identity Service (design pass, not yet built)
+
+Requested by the user after the 16-harness build was complete: give five services that currently
+have zero frontend (checked, not assumed — `find` across each service tree turned up no
+`static/`, `templates/`, or `*ui*` files) the same kind of browser surface that Skill Registry
+(D-037), Approvals/HITL, and Evals Runner already got. Design-only pass: architecture diagram,
+tech-stack choice, and view-by-view mockups, matching this SOP's gate to propose and show a
+mockup before writing any code.
+
+**D-096 — The new UIs reuse the exact pattern already shipped three times, not a new stack.**
+Read all three existing `static/index.html` files (skill-registry, approvals-service,
+evals-runner-service) before deciding anything: each is a single self-contained HTML file with
+inline `<style>`/`<script>`, no build step, no npm dependency, themed via CSS custom properties
+(light/dark via `prefers-color-scheme` + a `data-theme` override), calling its own service's REST
+API directly with a bearer token the operator pastes into a field (never a `client_id`/
+`client_secret` form — D-037's rule). FastAPI mounts it at `/ui` via
+`StaticFiles(directory=static_dir, html=True)`. **Why:** this is a validated, three-times-repeated
+project convention, not an incidental choice — introducing React/Vue/a build pipeline for five
+more pages would mean two UI stacks living side by side in the same monorepo for no functional
+gain, violates "reuse before invent," and is the kind of speculative infrastructure §2 of this
+project's working agreement rules out. The five new pages (Agent Builder, Agent Gateway, Eval
+Registry, Agent Registry, Identity Service) get the same shape: one `static/index.html` per
+service, mounted at `/ui`, bearer-token auth, same CSS variable palette so all eight `/ui` pages
+read as one family.
+
+**D-097 — Going from 3 to 8 copies of the same ~350-line boilerplate (theme CSS, bearer-token
+input, fetch-with-auth helper, table/card/empty/error-state components) crosses the point where
+duplication stops being "three similar lines" and starts being a real shared module.** Diffing
+the three existing `index.html` files confirms the first ~120 lines (CSS variables, base layout,
+button/input/badge styles) and the auth-header fetch wrapper are near-byte-identical across all
+three, with only the business content differing. **Why now and not at 3:** at 3 instances,
+duplicating was the cheaper, more honest choice (no abstraction has earned its place yet,
+consistent with "no premature abstraction" — ARCHITECTURE.md checklist); at 8, a single operator
+tweak (a color, the auth-error message, the theme toggle) would otherwise require editing eight
+files identically and trusting none drift. Proposal: extract a small `platform_core.ui` helper —
+one shared CSS file (`platform-ui.css`) and one shared JS module (`platform-ui.js`, the bearer-
+token box + authed-fetch + toast/empty/error helpers) — served by `platform-core`'s existing
+static-mount machinery and `<link>`/`<script src>`-included from each service's own
+`static/index.html`, which keeps owning only its page-specific markup and API calls. Not done
+yet — flagged here for alignment before touching the three already-shipped pages, since retrofitting
+them is itself a small, separate, reversible refactor.
+
+**D-098 — The MCP registry UI lives on `agent-gateway` (the façade), not on ContextForge
+directly.** ContextForge already ships its own admin UI at `:4444` (confirmed in
+`docker-compose.yml`: `ports: ["4444:4444"]`, commented "ContextForge's own admin UI/API, not
+fronted by Traefik... published only for local debugging"), but D-043 already decided
+`agent-gateway` is the only intended caller so this platform's own identity/scope model (not
+ContextForge's bootstrap admin login) gates every caller. **Why:** building the new UI against
+`agent-gateway`'s own four routes (`GET/POST /mcp-servers`, `GET /tools`,
+`POST /tools/{name}/call`) is the only option that doesn't reopen D-043's seam — a UI that talked
+to ContextForge directly would bypass this platform's own identity gating the same way a
+direct-to-ContextForge agent call would (flagged as the thing to avoid in D-047's note on
+`mcp-skills-demo`). Views: registered MCP servers list + register-new-server form, federated
+tools list, and a tool-call console (pick a tool, edit the `arguments` JSON, call it, see the
+real result) — a test console, not a secret-handling surface, since `CallToolIn` takes no
+credentials of its own.
+
+**D-099 — The Identity Service UI is read-only for clients/scopes/signing keys, plus the one
+necessary write (registering a new OAuth2 client); it explicitly does not get a "mint a token"
+playground.** `GET /clients` only ever returns `client_id`/`allowed_scopes` (confirmed reading
+`ClientOut` — no secret echoed back), so a browse view is safe as-is. `POST /clients` does require
+the operator to type a new client's secret once (confirmed reading `ClientIn`/`bcrypt.hashpw` —
+the service never generates and reveals one, the admin picks it); the form uses a password-type
+field and a one-time "this is hashed server-side and never shown again — note it now" notice, the
+same spirit as D-037 even though this one write genuinely needs secret material to exist at all.
+**Why no token-minting form:** `POST /oauth/token` takes `client_id` + `client_secret` as form
+fields — exactly the credential shape D-037 already rejected for every *other* registry's publish
+UI ("a real credential-handling anti-pattern, not something to model even in a reference
+platform"). Adding it here, on the one service that actually owns these secrets, would be the
+same anti-pattern with higher stakes, not a justified exception. Operators mint tokens the way
+every other flow in this platform already does — curl/httpx against `/oauth/token` — and the UI
+stays limited to administration and visibility (clients, scopes, `/.well-known/jwks.json`'s active
+signing keys).
+
+**D-100 — The Agent Registry UI's primary path is browse + verify; a manual sign-and-publish
+form is a secondary, clearly-labeled "advanced" view, not the main flow.** In practice every
+published card today was signed and published by `agent-builder-service`'s own
+`_sign_and_publish_card` (one `POST /cards/sign` then one `POST /agents` call, confirmed reading
+its source) — a human has no reason to hand-author a card JSON day to day. **Why keep the manual
+form at all:** `agent-registry`'s `POST /agents` and `identity-service`'s `POST /cards/sign` are
+both real, reachable REST endpoints, and the same bearer-token-paste shape Skill Registry's
+publish UI already validates (D-037) covers this exact flow (paste token → sign → publish) without
+inventing anything new — useful for operating the registry directly when Agent Builder isn't the
+one publishing (e.g. a manually-authored card during a demo). It is placed behind a secondary tab,
+not the landing view, so the UI doesn't imply hand-publishing is the normal way agents get
+registered.

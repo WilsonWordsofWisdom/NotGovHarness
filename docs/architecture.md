@@ -10,10 +10,29 @@ See [decisions.md](decisions.md) for the rationale behind every choice below and
 below marks each node ✅ built/merged; a few anchors also changed from the original Phase 0 guess
 once real research/building settled the actual choice — noted inline where that happened.
 
+**Status (updated 2026-10-13):** a design-only pass added a "Web UI" layer on top of the 16
+harnesses — see [decisions.md](decisions.md) D-096..D-100 and [design.md](design.md) for the
+full rationale and screen-by-screen mockups. Three services already had a self-hosted `/ui`
+(Skill Registry, Approvals/HITL, Evals Runner); this pass designs the same surface for the five
+that didn't (Agent Builder, Agent Gateway/MCP, Eval Registry, Agent Registry, Identity Service).
+Nothing below is built yet — the diagram marks the new surfaces 🧩 planned.
+
 ## Platform map (harnesses + chosen anchors)
 
 ```mermaid
 graph TB
+    subgraph UI["🖥️ Web UI — self-hosted `/ui` per service, static HTML/CSS/JS, bearer-token auth"]
+        direction LR
+        UI_SR["✅ Skill Registry UI"]
+        UI_HITL["✅ Approvals UI"]
+        UI_EV["✅ Evals Runner UI"]
+        UI_AB["🧩 Agent Builder UI"]
+        UI_MG["🧩 Agent Gateway UI"]
+        UI_ER["🧩 Eval Registry UI"]
+        UI_AR["🧩 Agent Registry UI"]
+        UI_ID["🧩 Identity Service UI"]
+    end
+
     subgraph L4["④ Agent Lifecycle"]
         AB["✅ Agent Builder<br/><i>CrewAI</i>"]
         DP["✅ Deployment Pipeline<br/><i>Docker + Temporal</i>"]
@@ -50,6 +69,15 @@ graph TB
     L2 --> ID
     L4 --> OBS
 
+    UI_SR -.serves.-> SR
+    UI_HITL -.serves.-> HITL
+    UI_EV -.serves.-> EV
+    UI_AB -.serves.-> AB
+    UI_MG -.serves.-> MG
+    UI_ER -.serves.-> ER
+    UI_AR -.serves.-> AR
+    UI_ID -.serves.-> ID
+
     L1 --> SUB
     L2 --> SUB
     L3 --> SUB
@@ -69,6 +97,8 @@ graph TB
     classDef planned fill:#fdf3dc,stroke:#8a5a00,color:#8a5a00,stroke-dasharray: 5 5;
     class AB,EV,MG,GR,MEM,RAG,SBX,HITL,AR,SR,ER,ID,GW,OBS,AUD built;
     class DP planned;
+    class UI_SR,UI_HITL,UI_EV built;
+    class UI_AB,UI_MG,UI_ER,UI_AR,UI_ID planned;
 ```
 
 ## Engine map
@@ -136,6 +166,37 @@ flowchart LR
     DP -->|deploy events, Kafka| EVT[(Redpanda)]
     DP --> RT["Agent Runtime<br/>live A2A endpoint"]
 ```
+
+## Web UI layer (design pass, not yet built)
+
+Full rationale: [decisions.md](decisions.md) D-096..D-100. Full view-by-view mockups:
+[design.md](design.md).
+
+**No new tech stack.** Three services already ship a self-hosted `/ui`: Skill Registry,
+Approvals/HITL, Evals Runner. Each is one dependency-free `static/index.html` — inline CSS
+(custom-property theme, light/dark) and inline JS (a bearer-token input + `fetch` wrapper that
+attaches it as `Authorization: Bearer ...`), mounted by FastAPI at `/ui` via
+`StaticFiles(html=True)`. The five new pages (Agent Builder, Agent Gateway/MCP, Eval Registry,
+Agent Registry, Identity Service) reuse that exact shape rather than introducing React/Vue/a
+build step — a second frontend stack living alongside the first would buy nothing functional
+(D-096).
+
+**The one new module:** going from 3 to 8 nearly-identical ~350-line files crosses the point
+where copy-paste stops paying for itself. The proposal (not yet built) is a small
+`platform_core.ui` static bundle — `platform-ui.css` (theme + layout + component styles) and
+`platform-ui.js` (the bearer-token box, authed-fetch helper, empty/error/toast states) — served
+once from `platform-core` and `<link>`/`<script>`-included by every `/ui` page, old and new
+alike, which then owns only its own page-specific markup and API calls (D-097).
+
+**Where each new UI talks to the platform:**
+
+| UI | Backend it calls | Notes |
+|---|---|---|
+| Agent Builder UI | `agent-builder-service` (`GET/POST /builds`) | One `POST /builds` runs kickoff → sign → publish in one call — no separate "trigger"/"stream logs" step exists server-side, so the UI doesn't invent one. |
+| Agent Gateway UI | `agent-gateway` façade (`GET/POST /mcp-servers`, `GET /tools`, `POST /tools/{name}/call`) | Talks to the façade, never to ContextForge's own `:4444` admin UI directly — keeps this platform's identity/scope gate in the loop (D-098, same seam D-043 closed). |
+| Eval Registry UI | `eval-registry` (`GET/POST /suites`, `GET /suites/{name}/{version}/dataset`) | Same publish-via-pasted-bearer-token shape as Skill Registry's existing UI. |
+| Agent Registry UI | `agent-registry` (`GET /agents`, `GET /agents/{name}/{version}/verify`) + `identity-service` `POST /cards/sign` for the secondary manual-publish view | Browse/verify is the landing view; manual sign-and-publish is secondary (D-100) since Agent Builder is the normal publisher. |
+| Identity Service UI | `identity-service` (`GET /clients`, `POST /clients`, `GET /.well-known/jwks.json`) | Read-only client/scope/signing-key visibility plus client registration; deliberately no `/oauth/token` minting form (D-099). |
 
 ## Phase 0 substrate
 
