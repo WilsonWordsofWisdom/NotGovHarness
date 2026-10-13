@@ -75,6 +75,92 @@ async def test_build_kickoff_calls_a_tool_and_publishes_a_fetchable_card(
         assert "list_skills" in config["task"]
 
 
+async def test_revise_bumps_version_and_preserves_build_history(
+    platform_identity_url, platform_agent_builder_url, platform_agent_registry_url
+):
+    """D-103: revise is a new, versioned build, not an in-place edit -- the old Build row and the
+    old published card must both survive untouched alongside the new one."""
+    token = await _token(
+        platform_identity_url, "example-service", "example-service-dev-secret", "builder:build"
+    )
+    headers = {"Authorization": f"Bearer {token}"}
+    marker = uuid.uuid4().hex[:8]
+    name = f"agent-builder-revise-test-{marker}"
+
+    async with httpx.AsyncClient(base_url=platform_agent_builder_url, timeout=120.0) as client:
+        created = await client.post(
+            "/builds",
+            json={
+                "name": name,
+                "description": "Original build, before any revision.",
+                "task": "Say hello in one short sentence.",
+                "role": "Greeter",
+                "goal": "Greet the caller.",
+                "backstory": "You say hello for a living.",
+            },
+            headers=headers,
+        )
+        assert created.status_code == 201, created.text
+        created_body = created.json()
+        assert created_body["card_version"] == "0.1.0"
+
+        revised = await client.post(
+            f"/builds/{name}/revise",
+            json={
+                "description": "Revised build -- now says goodbye instead.",
+                "task": "Say goodbye in one short sentence.",
+                "role": "Farewell agent",
+                "goal": "Bid the caller farewell.",
+                "backstory": "You say goodbye for a living.",
+            },
+            headers=headers,
+        )
+        assert revised.status_code == 201, revised.text
+        revised_body = revised.json()
+        assert revised_body["card_version"] == "0.2.0"
+        assert revised_body["build_id"] != created_body["build_id"]
+
+        listed = await client.get("/builds", headers=headers)
+        assert listed.status_code == 200
+        matching = [b for b in listed.json() if b["name"] == name]
+        assert len(matching) == 2, "both the original and the revised build must be listed"
+
+    # Both card versions must remain independently fetchable -- revising must not overwrite the
+    # original.
+    async with httpx.AsyncClient(base_url=platform_agent_registry_url, timeout=15.0) as client:
+        original_card = await client.get(f"/agents/{name}/0.1.0")
+        assert original_card.status_code == 200, original_card.text
+        original_config = original_card.json()["card"]["extensions"][0]["params"]
+        assert original_config["role"] == "Greeter"
+
+        revised_card = await client.get(f"/agents/{name}/0.2.0")
+        assert revised_card.status_code == 200, revised_card.text
+        revised_config = revised_card.json()["card"]["extensions"][0]["params"]
+        assert revised_config["role"] == "Farewell agent"
+
+
+async def test_revise_requires_an_existing_build(platform_identity_url, platform_agent_builder_url):
+    token = await _token(
+        platform_identity_url, "example-service", "example-service-dev-secret", "builder:build"
+    )
+    name = f"agent-builder-no-such-build-{uuid.uuid4().hex[:8]}"
+
+    async with httpx.AsyncClient(base_url=platform_agent_builder_url, timeout=15.0) as client:
+        resp = await client.post(
+            f"/builds/{name}/revise",
+            json={
+                "description": "d",
+                "task": "t",
+                "role": "r",
+                "goal": "g",
+                "backstory": "b",
+            },
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 404
+        assert resp.json()["error"]["code"] == "agent_not_found"
+
+
 async def test_builds_requires_scope_but_read_is_open_to_any_caller(
     platform_identity_url, platform_agent_builder_url
 ):

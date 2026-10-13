@@ -1424,3 +1424,47 @@ form's error handling is not optional polish, it's the only place that failure i
 Role/goal/backstory aren't shown on the build detail screen either, since the API genuinely has
 nowhere to read them back from (they're only recoverable from the published Agent Card's
 `extensions`, D-088) — showing them would mean fabricating a field the response never sends.
+
+---
+
+## 2026-10-13 — Two follow-up requests on the Agent Builder UI: KIV'd one, built the other first
+
+Raised while reviewing the New Build form before it existed in the real `/ui`: rename
+`task` to "Instructions" (cosmetic, not logged separately), replace `backstory` with uploaded
+reference files as the agent's static knowledge base, and add a real "edit a created agent"
+view. The last two turned out to be genuine backend features, not form changes, so each got its
+own decision before any UI code.
+
+**D-102 — Real per-agent knowledge-base grounding is KIV'd (not built), because
+`knowledge-service` has no per-agent scoping to hook into today.** Read `knowledge-service`'s
+actual `IngestIn`/`QueryIn`/`rag_layer.py` before concluding anything: it is one global corpus
+with a two-tier `shared`/`private`+`ingested_by` visibility model and no collection/tag concept at
+all — `RagLayer.query()` filters only on that visibility, never on which agent a document belongs
+to. Wiring file uploads straight into it as-is would let one agent's reference material leak into
+every other agent's answers, including ones built later by someone else. **Why defer rather than
+build a quick version:** doing this for real needs a scope/tag field added to `knowledge-service`
+(`IngestIn` + a query-time filter in `rag_layer.py`) *and* a new CrewAI tool in
+`agent-builder-service` (same shape as the existing `AgentGatewayTool`, D-072) to retrieve
+scoped to that tag at kickoff time — a cross-service feature, not a page edit. Logged here so it
+isn't silently dropped: `backstory` stays as CrewAI's real, required persona field in the New
+Build form for now, exactly as D-096..D-101 already designed it.
+
+**D-103 — "Editing" a build is a new, versioned revision (`POST /builds/{name}/revise`), never an
+in-place mutation — built on a sub-branch (`feat/ui-agent-builder-revise`, off
+`feat/ui-agent-builder`) before any UI edit view, so the edit screen has a real endpoint under it
+from the start.** `Build`'s own docstring already calls it "this harness's own audit trail — one
+row per build request and its outcome," the same append-only shape as Sandbox's `executions`/
+Guardrails' `checks`; mutating a row in place would be the first harness in this codebase to
+break that pattern. Agent Registry also already supports multiple versions per name
+(`GET /agents/{name}/{version}`) — `agent-builder-service` just never used that, hardcoding every
+card to `0.1.0`. `revise` looks up the latest published version for that name via
+`GET /agents/{name}`, bumps it (`bump_version`: minor+1, patch reset to 0 — a revised
+role/goal/backstory/task is a behavior change, not a patch-level fix), re-runs kickoff with the
+edited fields, and publishes a new card version plus a new `Build` row; the original row and card
+are untouched. `_sign_and_publish_card` and the create/revise kickoff-publish-persist sequence
+were refactored into one shared `_run_build` helper rather than duplicating that ~20-line flow at
+a second call site. A new `card_version` column (migration `0002`, `server_default='0.1.0'` so
+every pre-existing row reads correctly) makes the version visible without re-deriving it from the
+registry on every read. Verified against the real running stack, not just unit tests: a 404
+`agent_not_found` for a name with no prior build, and a genuine two-build history (`0.1.0` then
+`0.2.0`) where both cards stayed independently fetchable from `agent-registry` afterward.

@@ -23,6 +23,7 @@ class Build(Base):
     tool_was_called: Mapped[bool] = mapped_column(Boolean, nullable=False)
     agent_card_id: Mapped[str] = mapped_column(String(36), nullable=False)
     eval_suite_names: Mapped[list] = mapped_column(JSON, nullable=False)
+    card_version: Mapped[str] = mapped_column(String(32), nullable=False, server_default="0.1.0")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
