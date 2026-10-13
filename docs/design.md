@@ -41,25 +41,41 @@ animation beyond a short opacity/transform transition on panel switches.
 
 ## Agent Builder UI — `agent-builder-service`
 
-Landing view: **Builds** list.
+Landing view: **Builds** list. Revised while building, against `models.py`/`main.py` directly
+(not just the earlier research pass): a `Build` row has **no `status` column and no
+`role`/`goal`/`backstory` columns** — `POST /builds` either succeeds (kickoff → sign → publish
+all in one call) and persists a row, or raises before any row is ever constructed, so a failed
+attempt is never listed at all, only ever returned once, as an error response to whoever
+submitted it. The earlier draft of this section assumed a `pending`/`running`/`failed` status and
+a stored role/goal/backstory on every build — both wrong; corrected here before writing the real
+page, and logged as D-101 rather than silently fixed.
 
-1. **Builds list** — table: name, role (truncated), status badge (`pending`/`running`/
-   `published`/`failed`), created time. Empty state: "No builds yet" + pointer to the New Build
-   tab. Row click → detail.
-2. **Build detail** — role / goal / backstory / task shown as read-only fields (these are
-   immutable once a build runs — the API has no `PATCH /builds/{id}`); resulting
-   `agent_card_id` as a link to the Agent Registry UI's card detail (cross-navigation between the
-   two new UIs); status + raw error reason if `failed`.
-3. **New Build form** — bearer-token field, then name/description/role/goal/backstory/task text
-   inputs. Submitting calls `POST /builds` once and shows a spinner — **the only state this
-   button has**, because the backend runs kickoff → sign → publish synchronously in that one call
-   (confirmed reading `agent-builder-service/src/.../main.py`); the UI does not pretend there's a
-   separate "trigger" or a live log stream, since neither exists server-side. Success routes to
-   the new build's detail view; failure shows the real `reason`/`message` from the API's error
-   envelope inline, not a generic toast.
+Every route on this service (`GET /builds`, `GET /builds/{id}`, `POST /builds`) requires a valid
+bearer token (`require_identity`; `POST` additionally needs `builder:build` scope) — unlike Skill
+Registry, where browsing is public. So the page gets one bearer-token field used for every call,
+not one scoped to a "New build" tab only.
 
-Non-goals (explicitly not designed): editing a build, re-running a build, streaming CrewAI logs —
-none of these exist in the API today, and the brief is "design what can actually ship."
+1. **Builds list** — table of actually-persisted (i.e. successful) builds: name, description,
+   agent card id, eval suites (chips), whether a tool was called (`tool_was_called`), created
+   time. Empty state: "No builds yet" + pointer to the New Build tab. Row click → detail.
+2. **Build detail** — `GET /builds/{id}`'s real fields: name, description, task,
+   `kickoff_result` (the full raw CrewAI output, shown as a monospace block — the only place the
+   agent's actual output is visible), `tool_was_called`, `agent_card_id`, `eval_suites`.
+   **Role/goal/backstory are not shown here** — never persisted on this row; they're only
+   recoverable from the published Agent Card's `extensions` block, which belongs to the Agent
+   Registry UI, not this one. No status badge — every row here already succeeded.
+3. **New Build form** — bearer-token field, then name/description/task/role/goal/backstory text
+   inputs (all required by `BuildIn`). Submitting calls `POST /builds` once and shows a
+   spinner — **the only state this button has**, because the backend runs kickoff → sign →
+   publish synchronously in that one call; the UI does not pretend there's a separate "trigger"
+   or a live log stream, since neither exists server-side. Success routes to the new build's
+   detail view. Failure (`kickoff_failed` or `publish_failed`, both HTTP 502) shows the real
+   `error.code`/`error.message` from `platform_core.errors`'s envelope inline — and nothing is
+   added to the Builds list, since the backend never persisted anything.
+
+Non-goals (explicitly not designed): editing a build, re-running a build, streaming CrewAI logs,
+showing role/goal/backstory on the build itself — none of these exist in the API today, and the
+brief is "design what can actually ship."
 
 ## Agent Gateway UI (MCP registry) — `agent-gateway`
 

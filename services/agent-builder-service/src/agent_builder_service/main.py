@@ -6,10 +6,12 @@ decisions D-054, D-070..D-074.
 from __future__ import annotations
 
 import uuid
+from pathlib import Path
 from typing import Any
 
 import httpx
 from fastapi import Depends, FastAPI
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -219,6 +221,13 @@ def build_app() -> FastAPI:
                 "build_not_found", f"no build with id {build_id!r}", status_code=404
             )
         return _build_out(row)
+
+    static_dir = Path(__file__).resolve().parents[2] / "static"
+    if static_dir.is_dir():
+        # Mounted last, after every API route above: Starlette matches routes in registration
+        # order, so /builds and friends are still handled by the API -- this only catches paths
+        # nothing else claimed (/ui, /ui/index.html). Same shape as Skill Registry's /ui (D-037).
+        app.mount("/ui", StaticFiles(directory=static_dir, html=True), name="ui")
 
     return app
 

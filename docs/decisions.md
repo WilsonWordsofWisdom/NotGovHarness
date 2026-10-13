@@ -1404,3 +1404,23 @@ inventing anything new — useful for operating the registry directly when Agent
 one publishing (e.g. a manually-authored card during a demo). It is placed behind a secondary tab,
 not the landing view, so the UI doesn't imply hand-publishing is the normal way agents get
 registered.
+
+---
+
+## 2026-10-13 — Agent Builder UI (`feat/ui-agent-builder`, first of the five new `/ui` pages built)
+
+**D-101 — The Agent Builder UI's design was wrong about `Build`'s actual shape, found while
+building, not before — corrected in `design.md` rather than silently patched.** The earlier
+design pass (D-096..D-100) assumed a `status` field (`pending`/`running`/`published`/`failed`)
+and that role/goal/backstory were visible on a build. Reading `models.py`'s `Build` table
+directly before writing the page showed neither exists: no `status` column at all, and no
+`role`/`goal`/`backstory` columns either — `main.py`'s `create_build` only ever constructs and
+persists a `Build` row *after* kickoff, sign, and publish have all already succeeded; any
+exception along the way raises a `PlatformError` (`kickoff_failed`/`publish_failed`, both 502)
+straight to the caller, before a row is ever added to the session. **Why this matters for the
+UI:** a failed build is not a state you can browse back to — it only ever exists as the one-time
+error response the submitter got, so the Builds list has no "failed" rows and the New Build
+form's error handling is not optional polish, it's the only place that failure is ever visible.
+Role/goal/backstory aren't shown on the build detail screen either, since the API genuinely has
+nowhere to read them back from (they're only recoverable from the published Agent Card's
+`extensions`, D-088) — showing them would mean fabricating a field the response never sends.
