@@ -1491,3 +1491,54 @@ in the request body at all gets a real generated one in its published card's
 `extensions[0].params.backstory`, confirmed to actually contain the role and goal (not a
 placeholder), and the exact no-`backstory` payload shape the page's JS now sends was replayed
 against the running service to confirm the wire contract, not just the Python-side defaulting.
+
+---
+
+## 2026-10-18 — Agent Gateway renamed MCP Gateway Registry
+
+**D-105 — The harness built as "Agent Gateway" (D-008, D-017) is renamed "MCP Gateway
+Registry" — same service, same façade-over-ContextForge shape, name only.** Raised by the user
+while planning this harness's `/ui`: "Agent Gateway" reads as if it gateways *agents*, but it
+doesn't — it's a façade over ContextForge, which bundles MCP federation/proxying with
+ContextForge's own MCP server/tool registry (D-008: "MCP Gateway and Registry are merged onto
+ContextForge"; D-017 kept that on purpose when elevating it: "Harness renamed Agent Gateway
+(still includes the MCP registry)"). That's a real, different concern from the separate Agent
+Registry service (signed A2A Agent Cards) a few lines away in the same platform map, and the
+name collision was confusing enough to be worth fixing rather than carrying forward. Considered
+and rejected: actually splitting the MCP registry out of the gateway into its own service,
+matching how Agent/Skill/Eval Registry are each decoupled from whatever calls them at
+runtime — a real architecture change, not a rename, and D-008's "fewest moving parts" reasoning
+for a reference platform still holds; revisit only if there's a concrete reason to decouple them
+(e.g. swapping ContextForge out later without losing registry data).
+
+**Renamed, full stack, nothing left pointing at the old name:**
+- `services/agent-gateway` → `services/mcp-gateway-registry`; Python package `agent_gateway` →
+  `mcp_gateway_registry`; `agent-builder-service`'s `AgentGatewayTool` →
+  `McpGatewayRegistryTool` (file renamed too, D-072's tool).
+- OAuth2 scope `agent_gateway:call` → `mcp_gateway_registry:call` — **not** just in new code: a
+  new migration (`0018`, identity-service) updates the two live clients
+  (`example-service`, `agent-builder-service`) that already held the old scope string in their
+  `allowed_scopes` column, in place, rather than leaving a stale string nothing checks for
+  anymore or granting a second additive scope. The historical scope-granting migrations
+  (`0006`..`0017`) are left untouched — they're already-applied, immutable history; rewriting
+  an applied migration's content would misrepresent what the database actually ran.
+- `docker-compose.yml`: service block, container env vars (`AGENT_GATEWAY_URL` →
+  `MCP_GATEWAY_REGISTRY_URL`), `depends_on`, and ContextForge's own `DATABASE_URL` (the Postgres
+  database our compose file happens to name after the harness, not ContextForge's own concept).
+- `platform_testing.fixtures.platform_agent_gateway_url` →
+  `platform_mcp_gateway_registry_url`, and every consumer of it.
+
+**One real loss along the way, disclosed rather than glossed over:** something (not this
+session, not tracked down) ran `docker compose up --build` on the `gateway` profile between the
+compose-file edit and the planned careful `ALTER DATABASE ... RENAME` — by the time this was
+checked, the old `agent_gateway` Postgres database was already gone and ContextForge had
+auto-bootstrapped a fresh, empty `mcp_gateway_registry` one rather than the rename preserving its
+rows. For this reference/demo stack the lost rows were only prior test tool/server registrations
+(re-created idempotently the next time anything registers through it, per `_ensure_tool_
+registered()`'s already-idempotent-by-URL logic), not anything load-bearing — but it's a real
+data loss, not a clean rename, and is recorded as such rather than described as if `ALTER
+DATABASE` had actually run.
+
+**Historical decisions (D-008, D-017, D-043..D-047, D-098) are left exactly as written** — they
+accurately describe what was decided, under the name that was correct at the time. This entry is
+the forward pointer; nothing upstream of it was rewritten.

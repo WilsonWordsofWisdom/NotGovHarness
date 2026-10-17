@@ -1,5 +1,5 @@
-from agent_gateway.main import app
 from fastapi.testclient import TestClient
+from mcp_gateway_registry.main import app
 
 
 def test_healthz():

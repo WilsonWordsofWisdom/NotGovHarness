@@ -1,6 +1,6 @@
 """Infra-free: EvalRegistryClient's request shape and kind-rejection behavior against a stub
 Eval Registry server — same ThreadingHTTPServer pattern as agent-builder-service's
-test_agent_gateway_tool.py.
+test_mcp_gateway_registry_tool.py.
 """
 
 from __future__ import annotations

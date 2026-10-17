@@ -1,6 +1,6 @@
 """Skip-if-down: the actual end-to-end flow this harness exists to prove — a real bearer token
 submits a build request, a real CrewAI crew.kickoff() runs against real llm-gateway output, the
-built agent genuinely calls a tool through real agent-gateway, the resulting Agent Card is
+built agent genuinely calls a tool through real mcp-gateway-registry, the resulting Agent Card is
 signed and published for real and fetchable back from agent-registry, and Eval Registry is
 queried for real for matching suites.
 """

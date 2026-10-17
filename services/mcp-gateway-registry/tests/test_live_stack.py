@@ -1,7 +1,7 @@
 """Skip-if-down: the actual end-to-end flow this harness exists to prove.
 
 A real bearer token from a running identity-service registers the real mcp-skills-demo MCP
-server with a real running ContextForge, through a real running agent-gateway façade, then
+server with a real running ContextForge, through a real running mcp-gateway-registry façade, then
 calls its `list_skills` tool through that same façade and gets back real Skill Registry data —
 not a mock, not a container-is-up check. Steps 1-4's tests already proved each hop in isolation
 (ContextForge itself, the façade against a stub ContextForge, the MCP server against a real
@@ -29,7 +29,7 @@ async def _call_scoped_token(identity_url: str) -> str:
                 "grant_type": "client_credentials",
                 "client_id": "example-service",
                 "client_secret": "example-service-dev-secret",
-                "scope": "agent_gateway:call",
+                "scope": "mcp_gateway_registry:call",
             },
         )
         resp.raise_for_status()
@@ -37,12 +37,14 @@ async def _call_scoped_token(identity_url: str) -> str:
 
 
 async def test_a_real_tool_call_routes_through_contextforge_to_real_skill_registry_data(
-    platform_identity_url, platform_agent_gateway_url
+    platform_identity_url, platform_mcp_gateway_registry_url
 ):
     token = await _call_scoped_token(platform_identity_url)
     headers = {"Authorization": f"Bearer {token}"}
 
-    async with httpx.AsyncClient(base_url=platform_agent_gateway_url, timeout=15.0) as client:
+    async with httpx.AsyncClient(
+        base_url=platform_mcp_gateway_registry_url, timeout=15.0
+    ) as client:
         registered = await client.post(
             "/mcp-servers",
             json={"name": GATEWAY_NAME, "url": MCP_SKILLS_DEMO_URL, "transport": "STREAMABLEHTTP"},

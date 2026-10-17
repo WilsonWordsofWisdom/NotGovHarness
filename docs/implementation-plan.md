@@ -15,6 +15,11 @@ dependencies. Phase 0 is the concrete gate before any harness is built.
 
 ## Status (updated 2026-09-25 — all 16 harnesses built, verified, and merged to `main`)
 
+**Note (2026-10-18):** the Agent Gateway harness described below was renamed **MCP Gateway
+Registry** (D-105) — same service, same build history; see
+[architecture.md](architecture.md) and [decisions.md](decisions.md) D-105. The Wave 3 narrative
+below is left as written (it was accurate at the time) and still says "Agent Gateway."
+
 **Phase 0 is COMPLETE and merged to `main`** (PRs #2 + #3). All six success criteria verified.
 
 **Wave 1 progress:**

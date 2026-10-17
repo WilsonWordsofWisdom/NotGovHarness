@@ -1,4 +1,5 @@
-"""agent-gateway: façade in front of ContextForge (Wave 3 Agent Gateway harness).
+"""mcp-gateway-registry: façade in front of ContextForge (Wave 3 Agent Gateway harness, renamed
+MCP Gateway Registry -- D-105).
 
 Façade / adapter service, per architecture.md's definition — wraps ContextForge behind our
 identity + OpenAPI contract. Our identity-service gates every caller; ContextForge's own admin
@@ -34,7 +35,7 @@ class CallToolIn(BaseModel):
 def build_app() -> FastAPI:
     settings = Settings()
     require_identity = make_require_identity(settings)
-    require_call_scope = require_scope(require_identity, "agent_gateway:call")
+    require_call_scope = require_scope(require_identity, "mcp_gateway_registry:call")
     cf = ContextForgeClient(
         settings.contextforge_url,
         settings.contextforge_admin_email,
@@ -43,7 +44,7 @@ def build_app() -> FastAPI:
 
     app = create_app(settings)
 
-    @app.post("/mcp-servers", tags=["agent-gateway"], status_code=201)
+    @app.post("/mcp-servers", tags=["mcp-gateway-registry"], status_code=201)
     async def register_mcp_server(
         body: RegisterServerIn, _identity: CallerIdentity = Depends(require_call_scope)
     ) -> dict[str, Any]:
@@ -52,7 +53,7 @@ def build_app() -> FastAPI:
         except ContextForgeError as exc:
             raise PlatformError("contextforge_error", exc.detail, status_code=502) from exc
 
-    @app.get("/mcp-servers", tags=["agent-gateway"])
+    @app.get("/mcp-servers", tags=["mcp-gateway-registry"])
     async def list_mcp_servers(
         _identity: CallerIdentity = Depends(require_call_scope),
     ) -> list[dict[str, Any]]:
@@ -61,7 +62,7 @@ def build_app() -> FastAPI:
         except ContextForgeError as exc:
             raise PlatformError("contextforge_error", exc.detail, status_code=502) from exc
 
-    @app.get("/tools", tags=["agent-gateway"])
+    @app.get("/tools", tags=["mcp-gateway-registry"])
     async def list_tools(
         _identity: CallerIdentity = Depends(require_call_scope),
     ) -> list[dict[str, Any]]:
@@ -70,7 +71,7 @@ def build_app() -> FastAPI:
         except ContextForgeError as exc:
             raise PlatformError("contextforge_error", exc.detail, status_code=502) from exc
 
-    @app.post("/tools/{name}/call", tags=["agent-gateway"])
+    @app.post("/tools/{name}/call", tags=["mcp-gateway-registry"])
     async def call_tool(
         name: str, body: CallToolIn, _identity: CallerIdentity = Depends(require_call_scope)
     ) -> dict[str, Any]:

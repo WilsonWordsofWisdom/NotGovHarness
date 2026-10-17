@@ -85,7 +85,9 @@ Non-goals (explicitly not designed): streaming CrewAI logs, a token-minting help
 role/goal from the Agent Registry to pre-fill Edit mode (a same-origin-only `/ui` page calling
 another service's API directly was judged out of scope — flagged, not silently done).
 
-## Agent Gateway UI (MCP registry) — `agent-gateway`
+## MCP Gateway Registry UI — `mcp-gateway-registry`
+
+(Named Agent Gateway until D-105 — same service, same façade-over-ContextForge shape.)
 
 Landing view: **MCP Servers**.
 

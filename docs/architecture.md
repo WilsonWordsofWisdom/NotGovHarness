@@ -20,6 +20,13 @@ that didn't (Agent Builder, Agent Gateway/MCP, Eval Registry, Agent Registry, Id
 (`feat/ui-agent-builder`; D-096, D-101, D-103, D-104) — the first of the five. Four remain
 planned: Agent Gateway/MCP, Eval Registry, Agent Registry, Identity Service.
 
+**Status (updated 2026-10-18):** the harness formerly called **Agent Gateway** is renamed
+**MCP Gateway Registry** (D-105) — same service, same façade-over-ContextForge shape (D-008,
+D-017, D-043), just a name that no longer collides in a reader's head with the separate Agent
+Registry service. Package, directory, Docker service, OAuth2 scope, and env vars all renamed;
+historical decisions (D-008, D-017, D-043..D-047, D-098) keep saying "Agent Gateway," since that
+was accurate at the time.
+
 ## Platform map (harnesses + chosen anchors)
 
 ```mermaid
@@ -30,7 +37,7 @@ graph TB
         UI_HITL["✅ Approvals UI"]
         UI_EV["✅ Evals Runner UI"]
         UI_AB["✅ Agent Builder UI"]
-        UI_MG["🧩 Agent Gateway UI"]
+        UI_MG["🧩 MCP Gateway Registry UI"]
         UI_ER["🧩 Eval Registry UI"]
         UI_AR["🧩 Agent Registry UI"]
         UI_ID["🧩 Identity Service UI"]
@@ -42,7 +49,7 @@ graph TB
         EV["✅ Evals<br/><i>DeepEval + Ragas</i><br/><i>(Promptfoo deferred)</i>"]
     end
     subgraph L3["③ Runtime & Policy"]
-        MG["✅ Agent Gateway<br/><i>ContextForge (A2A+MCP+Registry)</i>"]
+        MG["✅ MCP Gateway Registry<br/><i>ContextForge (A2A+MCP+Registry)</i>"]
         GR["✅ Guardrails<br/><i>LLM Guard / NeMo / Guardrails AI</i><br/><i>(Llama Guard deferred)</i>"]
         MEM["✅ Memory<br/><i>Mem0 (pgvector)</i>"]
         RAG["✅ Knowledge / RAG<br/><i>LlamaIndex + FastEmbed reranker</i>"]
@@ -138,7 +145,7 @@ sequenceDiagram
     participant MEM as Memory
     participant RAG as Knowledge/RAG
     participant GW as LLM Gateway
-    participant MG as Agent Gateway
+    participant MG as MCP Gateway Registry
     participant SBX as Sandbox
     participant HITL as Approvals
     C->>ID: get scoped token (OAuth2)
@@ -148,7 +155,7 @@ sequenceDiagram
     RT->>RAG: retrieve grounding (REST, provenance)
     loop reason / act
         RT->>GW: chat/completion (OpenAI API)
-        RT->>MG: call tool via Agent Gateway (MCP/A2A)
+        RT->>MG: call tool via MCP Gateway Registry (MCP/A2A)
         RT->>SBX: run code (isolated, Docker — not E2B, D-050)
         RT->>HITL: approve risky action? (Temporal signal)
     end
@@ -179,7 +186,7 @@ Full rationale: [decisions.md](decisions.md) D-096..D-100. Full view-by-view moc
 Approvals/HITL, Evals Runner. Each is one dependency-free `static/index.html` — inline CSS
 (custom-property theme, light/dark) and inline JS (a bearer-token input + `fetch` wrapper that
 attaches it as `Authorization: Bearer ...`), mounted by FastAPI at `/ui` via
-`StaticFiles(html=True)`. The five new pages (Agent Builder, Agent Gateway/MCP, Eval Registry,
+`StaticFiles(html=True)`. The five new pages (Agent Builder, MCP Gateway Registry, Eval Registry,
 Agent Registry, Identity Service) reuse that exact shape rather than introducing React/Vue/a
 build step — a second frontend stack living alongside the first would buy nothing functional
 (D-096).
@@ -196,7 +203,7 @@ alike, which then owns only its own page-specific markup and API calls (D-097).
 | UI | Backend it calls | Notes |
 |---|---|---|
 | Agent Builder UI | `agent-builder-service` (`GET/POST /builds`) | One `POST /builds` runs kickoff → sign → publish in one call — no separate "trigger"/"stream logs" step exists server-side, so the UI doesn't invent one. |
-| Agent Gateway UI | `agent-gateway` façade (`GET/POST /mcp-servers`, `GET /tools`, `POST /tools/{name}/call`) | Talks to the façade, never to ContextForge's own `:4444` admin UI directly — keeps this platform's identity/scope gate in the loop (D-098, same seam D-043 closed). |
+| MCP Gateway Registry UI | `mcp-gateway-registry` façade (`GET/POST /mcp-servers`, `GET /tools`, `POST /tools/{name}/call`) | Talks to the façade, never to ContextForge's own `:4444` admin UI directly — keeps this platform's identity/scope gate in the loop (D-098, same seam D-043 closed). |
 | Eval Registry UI | `eval-registry` (`GET/POST /suites`, `GET /suites/{name}/{version}/dataset`) | Same publish-via-pasted-bearer-token shape as Skill Registry's existing UI. |
 | Agent Registry UI | `agent-registry` (`GET /agents`, `GET /agents/{name}/{version}/verify`) + `identity-service` `POST /cards/sign` for the secondary manual-publish view | Browse/verify is the landing view; manual sign-and-publish is secondary (D-100) since Agent Builder is the normal publisher. |
 | Identity Service UI | `identity-service` (`GET /clients`, `POST /clients`, `GET /.well-known/jwks.json`) | Read-only client/scope/signing-key visibility plus client registration; deliberately no `/oauth/token` minting form (D-099). |

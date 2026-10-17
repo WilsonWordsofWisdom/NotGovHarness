@@ -18,7 +18,7 @@ package = false
 # specifically) still passes against the overridden versions before relying on this — D-075.
 # crewai also narrowly pins mcp~=1.28.1, which drags the whole workspace's `mcp` down from
 # 2.1.1 (mcp-skills-demo's own tests are written against 2.1.1's API) — this harness never
-# exercises crewai's own MCP support (D-072: tool access goes through agent-gateway's REST API,
+# exercises crewai's own MCP support (D-072: tool access goes through mcp-gateway-registry's REST API,
 # not crewai-tools' MCPServerAdapter), so pinning `mcp` to what mcp-skills-demo already needs is
 # safe from crewai's side; verified by re-running mcp-skills-demo's own tests + pyright against
 # the override before relying on it.

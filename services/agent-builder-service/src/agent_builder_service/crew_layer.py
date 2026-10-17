@@ -1,5 +1,5 @@
 """Constructs and runs a real single-agent CrewAI `Crew` against `llm-gateway`, with one tool
-wired through `agent-gateway` (D-072). See
+wired through `mcp-gateway-registry` (D-072). See
 docs/superpowers/specs/2026-09-08-agent-builder-harness-design.md and decisions D-070..D-074.
 
 CrewAI's telemetry (D-070) and tracing (D-074) gates must be set before `crewai` is ever
@@ -29,8 +29,8 @@ from platform_core.llm_gateway_auth import (  # noqa: E402
     looks_like_auth_failure,
 )
 
-from .agent_gateway_tool import AgentGatewayTool  # noqa: E402
 from .config import Settings  # noqa: E402
+from .mcp_gateway_registry_tool import McpGatewayRegistryTool  # noqa: E402
 from .sync_token import SyncTokenClient  # noqa: E402
 
 FEDERATED_TOOL_ORIGINAL_NAME = "list_skills"
@@ -52,12 +52,13 @@ class CrewLayer:
 
     async def _ensure_tool_registered(self) -> str:
         """Resolve the federated name of mcp-skills-demo's `list_skills` tool behind
-        agent-gateway, registering the MCP server if it isn't already there. Registration is
-        idempotent-by-URL (found live building Agent Gateway) — already-registered is a pass."""
+        mcp-gateway-registry, registering the MCP server if it isn't already there.
+        Registration is idempotent-by-URL (found live building this harness, under its original
+        name Agent Gateway — D-105) — already-registered is a pass."""
         if self._federated_tool_name is not None:
             return self._federated_tool_name
 
-        gateway_url = self._settings.agent_gateway_url
+        gateway_url = self._settings.mcp_gateway_registry_url
         headers: dict[str, str] = {}
 
         def apply_token(token: str) -> None:
@@ -87,7 +88,7 @@ class CrewLayer:
             ]
             if not matches:
                 raise RuntimeError(
-                    f"{FEDERATED_TOOL_ORIGINAL_NAME!r} not found behind agent-gateway after "
+                    f"{FEDERATED_TOOL_ORIGINAL_NAME!r} not found behind mcp-gateway-registry after "
                     "registering mcp-skills-demo"
                 )
             name: str = matches[0]["name"]
@@ -100,20 +101,18 @@ class CrewLayer:
         self._federated_tool_name = federated_tool_name
         return federated_tool_name
 
-    async def run(
-        self, *, task: str, role: str, goal: str, backstory: str
-    ) -> KickoffResult:
+    async def run(self, *, task: str, role: str, goal: str, backstory: str) -> KickoffResult:
         federated_tool_name = await self._ensure_tool_registered()
         tool_token_client = SyncTokenClient(
             identity_url=self._settings.identity_url,
             client_id=self._settings.builder_client_id,
             client_secret=self._settings.builder_client_secret,
-            scope="agent_gateway:call",
+            scope="mcp_gateway_registry:call",
         )
-        gateway_tool = AgentGatewayTool(
+        gateway_tool = McpGatewayRegistryTool(
             name="list_skills",
             description="Lists the skills currently published in Skill Registry.",
-            agent_gateway_url=self._settings.agent_gateway_url,
+            mcp_gateway_registry_url=self._settings.mcp_gateway_registry_url,
             federated_tool_name=federated_tool_name,
             token_client=tool_token_client,
         )
@@ -135,7 +134,7 @@ class CrewLayer:
     async def _kickoff(
         self,
         llm_token: str,
-        gateway_tool: AgentGatewayTool,
+        gateway_tool: McpGatewayRegistryTool,
         task: str,
         role: str,
         goal: str,
@@ -151,7 +150,12 @@ class CrewLayer:
         )
 
     def _kickoff_sync(
-        self, llm: LLM, gateway_tool: AgentGatewayTool, task: str, role: str, goal: str,
+        self,
+        llm: LLM,
+        gateway_tool: McpGatewayRegistryTool,
+        task: str,
+        role: str,
+        goal: str,
         backstory: str,
     ) -> KickoffResult:
         agent = Agent(role=role, goal=goal, backstory=backstory, llm=llm, tools=[gateway_tool])

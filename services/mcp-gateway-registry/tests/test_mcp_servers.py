@@ -1,7 +1,7 @@
-"""Infra-free: agent-gateway's register/list-servers endpoints against a stub ContextForge HTTP
-server and a stub identity-service JWKS server — mirrors the pattern already used throughout
-this repo (upstream-stub's test_echo.py, agent-registry's test_publish.py) for exactly this
-"a real outbound HTTP call is unavoidable, so stub the far end" situation.
+"""Infra-free: mcp-gateway-registry's register/list-servers endpoints against a stub
+ContextForge HTTP server and a stub identity-service JWKS server — mirrors the pattern already
+used throughout this repo (upstream-stub's test_echo.py, agent-registry's test_publish.py) for
+exactly this "a real outbound HTTP call is unavoidable, so stub the far end" situation.
 """
 
 from __future__ import annotations
@@ -132,12 +132,12 @@ def stub_contextforge():
 def app(jwks_server, stub_contextforge, monkeypatch):
     cf_url, _ = stub_contextforge
     monkeypatch.setenv("OAUTH2_JWKS_URL", jwks_server)
-    monkeypatch.setenv("SERVICE_NAME", "agent-gateway")
+    monkeypatch.setenv("SERVICE_NAME", "mcp-gateway-registry")
     monkeypatch.setenv("CONTEXTFORGE_URL", cf_url)
     monkeypatch.setenv("CONTEXTFORGE_ADMIN_EMAIL", "admin@example.com")
     monkeypatch.setenv("CONTEXTFORGE_ADMIN_PASSWORD", "changeme123")
 
-    from agent_gateway import main as main_module
+    from mcp_gateway_registry import main as main_module
 
     importlib.reload(main_module)
     return main_module.app
@@ -145,7 +145,7 @@ def app(jwks_server, stub_contextforge, monkeypatch):
 
 def test_register_and_list_mcp_server(app, private_pem, stub_contextforge):
     _, state = stub_contextforge
-    token = _token(private_pem, "agent_gateway:call")
+    token = _token(private_pem, "mcp_gateway_registry:call")
     client = TestClient(app)
 
     resp = client.post(

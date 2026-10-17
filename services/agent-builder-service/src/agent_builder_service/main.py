@@ -82,13 +82,13 @@ def build_app() -> FastAPI:
     require_build_scope = require_scope(require_identity, "builder:build")
 
     # This service's own token client (D-062/D-073), scoped for every downstream call it makes
-    # as itself: llm-gateway (via crew_layer), agent-gateway (registering/listing tools),
+    # as itself: llm-gateway (via crew_layer), mcp-gateway-registry (registering/listing tools),
     # identity-service (signing cards), agent-registry (publishing).
     token_client = TokenClient(
         identity_url=settings.identity_url,
         client_id=settings.builder_client_id,
         client_secret=settings.builder_client_secret,
-        scope="llm_gateway:call agent_gateway:call agentcard:sign registry:publish",
+        scope="llm_gateway:call mcp_gateway_registry:call agentcard:sign registry:publish",
     )
     crew_layer = CrewLayer(settings, token_client)
 
