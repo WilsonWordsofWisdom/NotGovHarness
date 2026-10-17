@@ -15,7 +15,10 @@ harnesses — see [decisions.md](decisions.md) D-096..D-100 and [design.md](desi
 full rationale and screen-by-screen mockups. Three services already had a self-hosted `/ui`
 (Skill Registry, Approvals/HITL, Evals Runner); this pass designs the same surface for the five
 that didn't (Agent Builder, Agent Gateway/MCP, Eval Registry, Agent Registry, Identity Service).
-Nothing below is built yet — the diagram marks the new surfaces 🧩 planned.
+
+**Status (updated 2026-10-17):** Agent Builder's `/ui` is built and merged to `main`
+(`feat/ui-agent-builder`; D-096, D-101, D-103, D-104) — the first of the five. Four remain
+planned: Agent Gateway/MCP, Eval Registry, Agent Registry, Identity Service.
 
 ## Platform map (harnesses + chosen anchors)
 
@@ -26,7 +29,7 @@ graph TB
         UI_SR["✅ Skill Registry UI"]
         UI_HITL["✅ Approvals UI"]
         UI_EV["✅ Evals Runner UI"]
-        UI_AB["🧩 Agent Builder UI"]
+        UI_AB["✅ Agent Builder UI"]
         UI_MG["🧩 Agent Gateway UI"]
         UI_ER["🧩 Eval Registry UI"]
         UI_AR["🧩 Agent Registry UI"]
@@ -97,8 +100,8 @@ graph TB
     classDef planned fill:#fdf3dc,stroke:#8a5a00,color:#8a5a00,stroke-dasharray: 5 5;
     class AB,EV,MG,GR,MEM,RAG,SBX,HITL,AR,SR,ER,ID,GW,OBS,AUD built;
     class DP planned;
-    class UI_SR,UI_HITL,UI_EV built;
-    class UI_AB,UI_MG,UI_ER,UI_AR,UI_ID planned;
+    class UI_SR,UI_HITL,UI_EV,UI_AB built;
+    class UI_MG,UI_ER,UI_AR,UI_ID planned;
 ```
 
 ## Engine map
