@@ -14,7 +14,7 @@ class Settings(PlatformSettings):
 
     llm_gateway_url: str = "http://localhost:8099"
     llm_gateway_model: str = "qwen3.8"
-    agent_gateway_url: str = "http://localhost:8095"
+    mcp_gateway_registry_url: str = "http://localhost:8095"
     agent_registry_url: str = "http://localhost:8092"
     eval_registry_url: str = "http://localhost:8094"
 

@@ -1,6 +1,6 @@
-"""Infra-free: AgentGatewayTool's request shape and 401-retry behavior (D-072, D-074's sibling
-sync-token concern) against stub identity-service and agent-gateway servers — same
-ThreadingHTTPServer pattern as platform-core's test_llm_gateway_auth.py.
+"""Infra-free: McpGatewayRegistryTool's request shape and 401-retry behavior (D-072, D-074's
+sibling sync-token concern) against stub identity-service and mcp-gateway-registry servers --
+same ThreadingHTTPServer pattern as platform-core's test_llm_gateway_auth.py.
 """
 
 from __future__ import annotations
@@ -10,7 +10,7 @@ import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
-from agent_builder_service.agent_gateway_tool import AgentGatewayTool
+from agent_builder_service.mcp_gateway_registry_tool import McpGatewayRegistryTool
 from agent_builder_service.sync_token import SyncTokenClient
 
 
@@ -44,7 +44,7 @@ def stub_identity():
 
 
 @pytest.fixture
-def stub_agent_gateway():
+def stub_mcp_gateway_registry():
     state = {"calls": [], "reject_tokens": set()}
 
     class Handler(BaseHTTPRequestHandler):
@@ -81,25 +81,27 @@ def stub_agent_gateway():
     server.shutdown()
 
 
-def _tool(identity_url: str, gateway_url: str) -> AgentGatewayTool:
+def _tool(identity_url: str, gateway_url: str) -> McpGatewayRegistryTool:
     token_client = SyncTokenClient(
         identity_url=identity_url,
         client_id="agent-builder-service",
         client_secret="x",
-        scope="agent_gateway:call",
+        scope="mcp_gateway_registry:call",
     )
-    return AgentGatewayTool(
+    return McpGatewayRegistryTool(
         name="list_skills",
-        description="Lists skills from Skill Registry via agent-gateway.",
-        agent_gateway_url=gateway_url,
+        description="Lists skills from Skill Registry via mcp-gateway-registry.",
+        mcp_gateway_registry_url=gateway_url,
         federated_tool_name="live-test-mcp-skills-demo-list_skills",
         token_client=token_client,
     )
 
 
-def test_run_calls_the_federated_tool_with_empty_arguments(stub_identity, stub_agent_gateway):
+def test_run_calls_the_federated_tool_with_empty_arguments(
+    stub_identity, stub_mcp_gateway_registry
+):
     identity_url, _identity_state = stub_identity
-    gateway_url, gateway_state = stub_agent_gateway
+    gateway_url, gateway_state = stub_mcp_gateway_registry
     tool = _tool(identity_url, gateway_url)
 
     result = tool._run()
@@ -114,12 +116,14 @@ def test_run_calls_the_federated_tool_with_empty_arguments(stub_identity, stub_a
     ]
 
 
-def test_run_retries_once_on_a_401_with_a_force_refreshed_token(stub_identity, stub_agent_gateway):
+def test_run_retries_once_on_a_401_with_a_force_refreshed_token(
+    stub_identity, stub_mcp_gateway_registry
+):
     """Mirrors D-063/D-074's reactive-retry shape, but for the sync tool-call path: a token that
-    looks fresh to this process can still be rejected by agent-gateway, so one retry with a
-    force-refreshed token must recover."""
+    looks fresh to this process can still be rejected by mcp-gateway-registry, so one retry with
+    a force-refreshed token must recover."""
     identity_url, _identity_state = stub_identity
-    gateway_url, gateway_state = stub_agent_gateway
+    gateway_url, gateway_state = stub_mcp_gateway_registry
     tool = _tool(identity_url, gateway_url)
 
     gateway_state["reject_tokens"].add("token-1")

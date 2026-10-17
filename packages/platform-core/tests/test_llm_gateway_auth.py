@@ -1,5 +1,5 @@
 """Infra-free: TokenClient's cache/refresh behavior (D-062, D-063) against a stub identity-service
-that simulates `/oauth/token`, same pattern as agent-gateway's test_contextforge_client.py.
+that simulates `/oauth/token`, same pattern as mcp-gateway-registry's test_contextforge_client.py.
 """
 
 from __future__ import annotations

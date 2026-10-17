@@ -4,10 +4,11 @@ from platform_core.config import PlatformSettings
 
 
 class Settings(PlatformSettings):
-    service_name: str = "agent-gateway"
+    service_name: str = "mcp-gateway-registry"
 
-    # hybrid: every proxy endpoint requires a verified agent_gateway:call token; no dev-mode
-    # bypass for this façade specifically (see main.py's require_call_scope). See
+    # hybrid: every proxy endpoint requires a verified mcp_gateway_registry:call token; no
+    # dev-mode bypass for this façade specifically (see main.py's require_call_scope). Built as
+    # the "Agent Gateway" harness, renamed D-105; see
     # docs/superpowers/specs/2026-08-31-agent-gateway-harness-design.md.
     auth_mode: str = "hybrid"
     oauth2_issuer: str = "https://identity-service.notgovharness.local"

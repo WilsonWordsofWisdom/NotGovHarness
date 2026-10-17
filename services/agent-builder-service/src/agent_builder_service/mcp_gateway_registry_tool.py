@@ -1,9 +1,9 @@
-"""Wraps `agent-gateway`'s `POST /tools/{name}/call` as a CrewAI `BaseTool` (D-072).
+"""Wraps `mcp-gateway-registry`'s `POST /tools/{name}/call` as a CrewAI `BaseTool` (D-072).
 
 Deliberately not `crewai-tools`' `MCPServerAdapter` — that connects straight to an MCP server,
 bypassing this platform's identity/scope model entirely, the exact seam D-043 built
-`agent-gateway` to close. This tool goes through the same REST surface any other authenticated
-caller uses.
+`mcp-gateway-registry` (then named Agent Gateway, D-105) to close. This tool goes through the
+same REST surface any other authenticated caller uses.
 """
 
 from __future__ import annotations
@@ -23,19 +23,19 @@ class _NoArgsSchema(BaseModel):
     pass
 
 
-class AgentGatewayTool(BaseTool):
-    """Calls one specific federated tool behind `agent-gateway`, by its federated name."""
+class McpGatewayRegistryTool(BaseTool):
+    """Calls one specific federated tool behind `mcp-gateway-registry`, by its federated name."""
 
     name: str
     description: str
     args_schema: type[BaseModel] = _NoArgsSchema
 
-    agent_gateway_url: str
+    mcp_gateway_registry_url: str
     federated_tool_name: str
     token_client: SyncTokenClient
 
     def _call(self, token: str) -> httpx.Response:
-        with httpx.Client(base_url=self.agent_gateway_url, timeout=15.0) as client:
+        with httpx.Client(base_url=self.mcp_gateway_registry_url, timeout=15.0) as client:
             return client.post(
                 f"/tools/{self.federated_tool_name}/call",
                 json={"arguments": {}},

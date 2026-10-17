@@ -11,7 +11,7 @@ import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
-from agent_gateway.contextforge import ContextForgeClient, ContextForgeError
+from mcp_gateway_registry.contextforge import ContextForgeClient, ContextForgeError
 
 
 @pytest.fixture
