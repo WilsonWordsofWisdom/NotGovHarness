@@ -9,9 +9,11 @@ a pure proxy, no Postgres DB of its own.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from fastapi import Depends, FastAPI
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from platform_core.app import create_app
@@ -79,6 +81,14 @@ def build_app() -> FastAPI:
             return await cf.call_tool(name, body.arguments)
         except ContextForgeError as exc:
             raise PlatformError("contextforge_error", exc.detail, status_code=502) from exc
+
+    static_dir = Path(__file__).resolve().parents[2] / "static"
+    if static_dir.is_dir():
+        # Mounted last, after every API route above: Starlette matches routes in registration
+        # order, so /mcp-servers and friends are still handled by the API -- this only catches
+        # paths nothing else claimed (/ui, /ui/index.html). Same shape as Skill Registry's /ui
+        # (D-037) and Agent Builder's (D-096).
+        app.mount("/ui", StaticFiles(directory=static_dir, html=True), name="ui")
 
     return app
 

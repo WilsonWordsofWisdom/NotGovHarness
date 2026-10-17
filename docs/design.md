@@ -89,19 +89,34 @@ another service's API directly was judged out of scope — flagged, not silently
 
 (Named Agent Gateway until D-105 — same service, same façade-over-ContextForge shape.)
 
-Landing view: **MCP Servers**.
+Landing view: **MCP Servers**. Checked against the real running stack before designing this,
+not just the stub tests: `GET /mcp-servers`/`GET /tools` pass through ContextForge's full row
+shape (dozens of internal fields — auth credentials, certs, lifecycle bookkeeping), so the UI
+is deliberately selective about which fields it surfaces rather than dumping the whole object.
+Every route here, reads included, requires a bearer token scoped `mcp_gateway_registry:call` —
+same as Agent Builder, there is no public-browse tier.
 
-1. **MCP servers list** — registered servers (name, url, transport) with a status chip from
-   `GET /mcp-servers`. Empty state: "No MCP servers registered" + CTA to the register form.
+1. **MCP servers list** — `GET /mcp-servers`, showing: name, url, transport, a status badge
+   (combining the real `status`/`enabled`/`reachable` fields — all three are genuinely returned,
+   not invented), `toolCount`, `lastSeen`. Empty state: "No MCP servers registered" + CTA to the
+   register form.
 2. **Register server form** — bearer token + name/url/transport (defaulting to `SSE` per
    `RegisterServerIn`). Calls `POST /mcp-servers`.
-3. **Tools** — flat list from `GET /tools` across all registered servers, each showing its
-   federated (prefixed) name.
-4. **Tool console** — pick a tool, a JSON textarea for `arguments` (client-side JSON-validated
-   before submit, inline parse-error state if invalid), "Call" button hits
-   `POST /tools/{name}/call`, result rendered as formatted JSON with a copy button. This is a
-   test console, not an admin surface for ContextForge itself — no iframe/link to ContextForge's
-   own `:4444` admin UI, which stays an internal, non-public debugging surface (D-098).
+3. **Tools** — flat list from `GET /tools` across all registered servers: the federated name
+   (`name`, e.g. `mcp-skills-demo-list-skills`), the `originalName` (`list_skills`), which server
+   it came from (`gatewaySlug`), description, enabled/reachable. Each row links to the console
+   below, pre-selecting that tool.
+4. **Tool console** — pick a tool (shows its real `inputSchema` as a read-only reference, not a
+   generated form — building a generic JSON-Schema-to-form renderer is out of scope for a
+   reference console), a JSON textarea for `arguments` (client-side JSON-validated before
+   submit), "Call" button hits `POST /tools/{name}/call`. **The response needs two-level error
+   handling, not one**: an HTTP error (401/403/502) is the usual `platform_core` envelope, but a
+   *successful* HTTP 200 can still carry a JSON-RPC-level failure (`{"error": {"code",
+   "message"}}` with no `"result"` key) when the tool call itself failed — confirmed against the
+   real service, not assumed. The UI checks for `body.error` even on a 200 before treating the
+   call as a success. This is a test console, not an admin surface for ContextForge itself — no
+   iframe/link to ContextForge's own `:4444` admin UI, which stays an internal, non-public
+   debugging surface (D-098).
 
 ## Eval Registry UI — `eval-registry`
 

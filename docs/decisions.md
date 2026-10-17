@@ -1542,3 +1542,19 @@ DATABASE` had actually run.
 **Historical decisions (D-008, D-017, D-043..D-047, D-098) are left exactly as written** — they
 accurately describe what was decided, under the name that was correct at the time. This entry is
 the forward pointer; nothing upstream of it was rewritten.
+
+---
+
+## 2026-10-18 — MCP Gateway Registry UI design pass, corrected against the live service
+
+**D-106 — The original MCP Gateway Registry UI design (written as part of D-096..D-100, before
+any route had been checked live) understated how much real data `GET /mcp-servers`/`GET /tools`
+actually carry.** Checked against the real running stack before writing the page, same
+discipline as Agent Builder's D-101/D-103/D-104: ContextForge's rows pass straight through the
+façade with dozens of fields (auth credentials, certs, lifecycle bookkeeping) — `design.md`
+corrected to name exactly which real fields the UI surfaces (`status`/`enabled`/`reachable` for
+server health, `name`/`originalName`/`gatewaySlug` for tool identity, `inputSchema` as a
+read-only reference) rather than the vague "status chip" the first pass guessed at. One real
+behavioral finding worth building around: `POST /tools/{name}/call` can return HTTP 200 with a
+JSON-RPC-level `error` key and no `result` key when the tool call itself fails — a naive
+"HTTP ok == success" check would silently show a failed call as if it succeeded.
