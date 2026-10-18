@@ -1558,3 +1558,20 @@ read-only reference) rather than the vague "status chip" the first pass guessed 
 behavioral finding worth building around: `POST /tools/{name}/call` can return HTTP 200 with a
 JSON-RPC-level `error` key and no `result` key when the tool call itself fails — a naive
 "HTTP ok == success" check would silently show a failed call as if it succeeded.
+
+---
+
+## 2026-10-18 — Eval Registry UI design pass, corrected against the live service
+
+**D-107 — The original Eval Registry UI design assumed `GET /suites` returns a version per row
+and that browsing needs a bearer token; neither is true.** Checked against `main.py` and the
+real running service (47 published suites) before writing the page: `list_suites` dedupes to
+one row per name (`{name, description, kind, applies_to}`) with no version field at all — a
+version only exists once a specific suite is opened via `GET /suites/{name}` or
+`/{name}/{version}`. And every `GET` route here has no `Depends(require_identity)` at all —
+browsing is fully public, same posture as Skill Registry, unlike Agent Builder/MCP Gateway
+Registry where every route (reads included) needs a token; only `POST /suites` does. Also found
+live: every one of the 47 real published suites is `kind="cases"` — nothing in this platform has
+ever published a `redteam` suite, so the redteam detail layout is designed from the schema
+(`D-040`) and `KNOWN_KINDS`/`redteam_config.purpose`'s validation rules, not from a real example,
+and is flagged as such in `design.md` rather than presented as equally verified.

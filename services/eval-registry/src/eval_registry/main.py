@@ -11,9 +11,11 @@ from __future__ import annotations
 import json
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Any
 
 from fastapi import Depends, FastAPI, Form, Response, UploadFile
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -249,6 +251,14 @@ def build_app() -> FastAPI:
             media_type="application/x-ndjson",
             headers={"Content-Disposition": f'attachment; filename="{name}-{version}.jsonl"'},
         )
+
+    static_dir = Path(__file__).resolve().parents[2] / "static"
+    if static_dir.is_dir():
+        # Mounted last, after every API route above: Starlette matches routes in registration
+        # order, so /suites and friends are still handled by the API -- this only catches paths
+        # nothing else claimed (/ui, /ui/index.html). Same shape as Skill Registry's /ui
+        # (D-037).
+        app.mount("/ui", StaticFiles(directory=static_dir, html=True), name="ui")
 
     return app
 
