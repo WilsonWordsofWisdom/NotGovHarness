@@ -35,6 +35,9 @@ Eval Registry, Agent Registry, Identity Service.
 D-037, D-107, D-108) — the third of the five. Two remain planned: Agent Registry, Identity
 Service.
 
+**Status (updated 2026-10-18):** Agent Registry's `/ui` is built (`feat/ui-agent-registry`;
+D-037, D-100, D-109) — the fourth of the five. One remains planned: Identity Service.
+
 ## Platform map (harnesses + chosen anchors)
 
 ```mermaid
@@ -47,7 +50,7 @@ graph TB
         UI_AB["✅ Agent Builder UI"]
         UI_MG["✅ MCP Gateway Registry UI"]
         UI_ER["✅ Eval Registry UI"]
-        UI_AR["🧩 Agent Registry UI"]
+        UI_AR["✅ Agent Registry UI"]
         UI_ID["🧩 Identity Service UI"]
     end
 
@@ -117,7 +120,8 @@ graph TB
     class DP planned;
     class UI_SR,UI_HITL,UI_EV,UI_AB,UI_MG built;
     class UI_ER built;
-    class UI_AR,UI_ID planned;
+    class UI_AR built;
+    class UI_ID planned;
 ```
 
 ## Engine map
@@ -214,7 +218,7 @@ alike, which then owns only its own page-specific markup and API calls (D-097).
 | Agent Builder UI | `agent-builder-service` (`GET/POST /builds`) | One `POST /builds` runs kickoff → sign → publish in one call — no separate "trigger"/"stream logs" step exists server-side, so the UI doesn't invent one. |
 | MCP Gateway Registry UI | `mcp-gateway-registry` façade (`GET/POST /mcp-servers`, `GET /tools`, `POST /tools/{name}/call`) | Talks to the façade, never to ContextForge's own `:4444` admin UI directly — keeps this platform's identity/scope gate in the loop (D-098, same seam D-043 closed). |
 | Eval Registry UI | `eval-registry` (`GET/POST /suites`, `GET /suites/{name}/{version}/dataset`) | Same publish-via-pasted-bearer-token shape as Skill Registry's existing UI. |
-| Agent Registry UI | `agent-registry` (`GET /agents`, `GET /agents/{name}/{version}/verify`) + `identity-service` `POST /cards/sign` for the secondary manual-publish view | Browse/verify is the landing view; manual sign-and-publish is secondary (D-100) since Agent Builder is the normal publisher. |
+| Agent Registry UI | `agent-registry` only (`GET /agents`, `GET /agents/{name}/{version}/verify`, `POST /agents`) | Browse/verify is the landing view; manual publish is secondary (D-100) and takes an already-signed card, since this page never calls `identity-service` directly -- no CORS is configured anywhere in this codebase (D-109). |
 | Identity Service UI | `identity-service` (`GET /clients`, `POST /clients`, `GET /.well-known/jwks.json`) | Read-only client/scope/signing-key visibility plus client registration; deliberately no `/oauth/token` minting form (D-099). |
 
 ## Phase 0 substrate

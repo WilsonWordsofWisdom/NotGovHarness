@@ -7,10 +7,12 @@ consumer: this is a catalog CRUD service, not an event listener.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 import jwt
 from fastapi import Depends, FastAPI
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -213,6 +215,14 @@ def build_app() -> FastAPI:
         except CardVerificationError as exc:
             return {"valid": False, "reason": exc.reason}
         return {"valid": True, "reason": None}
+
+    static_dir = Path(__file__).resolve().parents[2] / "static"
+    if static_dir.is_dir():
+        # Mounted last, after every API route above: Starlette matches routes in registration
+        # order, so /agents and friends are still handled by the API -- this only catches paths
+        # nothing else claimed (/ui, /ui/index.html). Same shape as Skill Registry's /ui
+        # (D-037).
+        app.mount("/ui", StaticFiles(directory=static_dir, html=True), name="ui")
 
     return app
 

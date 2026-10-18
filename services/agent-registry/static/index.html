@@ -1,0 +1,491 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Agent Registry</title>
+<style>
+  :root {
+    --bg: #f7f7f5;
+    --surface: #ffffff;
+    --border: #e2e0da;
+    --text: #24231f;
+    --text-dim: #6b6a63;
+    --accent: #7a5cff;
+    --accent-ink: #ffffff;
+    --accent-bg: #f1eeff;
+    --danger: #b3261e;
+    --danger-bg: #fbebea;
+    --warn: #8a5a00;
+    --warn-bg: #fdf3dc;
+    --ok: #146c2e;
+    --ok-bg: #e8f6ec;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #17161c;
+      --surface: #201f27;
+      --border: #34323d;
+      --text: #ece9f7;
+      --text-dim: #a29fb3;
+      --accent: #a48bff;
+      --accent-ink: #17161c;
+      --accent-bg: #241f3d;
+      --danger: #ff8f87;
+      --danger-bg: #3a201f;
+      --warn: #f0c26b;
+      --warn-bg: #3a2f14;
+      --ok: #7fd99a;
+      --ok-bg: #16301f;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #17161c;
+    --surface: #201f27;
+    --border: #34323d;
+    --text: #ece9f7;
+    --text-dim: #a29fb3;
+    --accent: #a48bff;
+    --accent-ink: #17161c;
+    --accent-bg: #241f3d;
+    --danger: #ff8f87;
+    --danger-bg: #3a201f;
+    --warn: #f0c26b;
+    --warn-bg: #3a2f14;
+    --ok: #7fd99a;
+    --ok-bg: #16301f;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    line-height: 1.5;
+  }
+  .wrap { max-width: 1040px; margin: 0 auto; padding: 2rem 1.5rem 4rem; }
+  header { margin-bottom: 1.5rem; }
+  header h1 { font-size: 1.5rem; margin: 0 0 0.25rem; letter-spacing: -0.01em; }
+  header p { margin: 0; color: var(--text-dim); font-size: 0.95rem; }
+
+  nav { display: flex; gap: 0.5rem; border-bottom: 1px solid var(--border); margin-bottom: 1.5rem; }
+  nav button {
+    background: none; border: none; cursor: pointer;
+    padding: 0.6rem 0.9rem; font-size: 0.9rem; color: var(--text-dim);
+    border-bottom: 2px solid transparent; margin-bottom: -1px;
+    font-family: inherit;
+  }
+  nav button.active { color: var(--text); border-bottom-color: var(--accent); font-weight: 600; }
+
+  .panel { display: none; }
+  .panel.active { display: block; }
+
+  input[type="text"], input[type="password"], input[type="search"] {
+    width: 100%; padding: 0.55rem 0.7rem; border-radius: 8px;
+    border: 1px solid var(--border); background: var(--surface); color: var(--text);
+    font-family: inherit; font-size: 0.9rem;
+  }
+  textarea {
+    width: 100%; padding: 0.55rem 0.7rem; border-radius: 8px;
+    border: 1px solid var(--border); background: var(--surface); color: var(--text);
+    font-family: var(--mono); font-size: 0.85rem; resize: vertical; min-height: 6rem;
+  }
+  label { display: block; font-size: 0.82rem; color: var(--text-dim); margin: 0.9rem 0 0.3rem; }
+  label:first-child { margin-top: 0; }
+
+  button.primary {
+    background: var(--accent); color: var(--accent-ink); border: none;
+    border-radius: 8px; padding: 0.6rem 1.1rem; font-size: 0.9rem; font-weight: 600;
+    cursor: pointer; font-family: inherit; margin-top: 1.1rem;
+  }
+  button.primary:disabled { opacity: 0.55; cursor: default; }
+  button.ghost {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+    padding: 0.5rem 0.8rem; cursor: pointer; font-family: inherit; color: var(--text);
+    font-size: 0.85rem;
+  }
+
+  .card-wrap { margin-bottom: 0.6rem; }
+  .card-detail { display: none; }
+  .card-detail.open { display: block; }
+
+  .card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+    padding: 0.9rem 1rem; cursor: pointer;
+  }
+  .card:hover { border-color: var(--accent); }
+  .card.active { background: var(--accent-bg); border-color: var(--accent); border-radius: 10px 10px 0 0; }
+  .card h3 { margin: 0; font-size: 0.98rem; font-family: var(--mono); }
+  .card .url { margin: 0.2rem 0 0; color: var(--text-dim); font-size: 0.8rem; font-family: var(--mono); }
+  .card p { margin: 0.25rem 0 0; color: var(--text-dim); font-size: 0.86rem; }
+
+  .chip {
+    display: inline-flex; background: var(--bg); border: 1px solid var(--border); border-radius: 12px;
+    padding: 0.15rem 0.55rem; font-size: 0.76rem; font-family: var(--mono); margin: 0.1rem 0.25rem 0 0;
+  }
+  .badge {
+    display: inline-flex; border-radius: 10px; padding: 0.1rem 0.5rem; font-size: 0.76rem; font-weight: 600;
+    background: var(--bg); color: var(--text-dim); font-family: var(--mono);
+  }
+  .badge.valid { background: var(--ok-bg); color: var(--ok); }
+  .badge.invalid { background: var(--danger-bg); color: var(--danger); }
+  .chevron { color: var(--text-dim); flex-shrink: 0; }
+
+  .empty { color: var(--text-dim); font-size: 0.9rem; padding: 1.5rem 0; text-align: center; }
+
+  .detail {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 0 0 10px 10px;
+    border-top: none; padding: 1.1rem 1.2rem;
+  }
+  .card-detail.open .detail { border-color: var(--accent); }
+  .field-label { font-size: 0.74rem; font-weight: 600; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.03em; margin-bottom: 0.2rem; }
+  .field { margin-bottom: 0.9rem; }
+
+  pre.block {
+    background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+    padding: 0.9rem; overflow-x: auto; font-family: var(--mono); font-size: 0.8rem;
+    white-space: pre-wrap; word-break: break-word; max-height: 18rem; overflow-y: auto; margin: 0;
+  }
+
+  .help {
+    background: var(--surface); border: 1px dashed var(--border); border-radius: 8px;
+    padding: 0.8rem 1rem; font-size: 0.82rem; color: var(--text-dim); margin-bottom: 1.2rem;
+  }
+  .help code {
+    display: block; background: var(--bg); border-radius: 6px; padding: 0.5rem 0.6rem;
+    margin-top: 0.4rem; font-family: var(--mono); font-size: 0.76rem; overflow-x: auto;
+    color: var(--text);
+  }
+
+  .result {
+    margin-top: 1.1rem; padding: 0.8rem 1rem; border-radius: 8px; font-size: 0.86rem;
+  }
+  .result.ok { background: var(--ok-bg); color: var(--ok); }
+  .result.err { background: var(--danger-bg); color: var(--danger); font-family: var(--mono); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Agent Registry</h1>
+    <p>Browse published, signed Agent Cards and verify their signatures. Normally agents are published automatically by Agent Builder.</p>
+  </header>
+
+  <nav>
+    <button id="tab-browse" class="active">Browse</button>
+    <button id="tab-advanced">Advanced: Publish</button>
+  </nav>
+
+  <section id="panel-browse" class="panel active">
+    <input type="search" id="search" placeholder="Search by name or description…" />
+    <div id="list" style="margin-top: 1rem;"></div>
+  </section>
+
+  <section id="panel-advanced" class="panel">
+    <div class="help">
+      Normally agents are published automatically by Agent Builder -- use this only to publish a
+      hand-authored, already-signed card. This form does <strong>not</strong> sign anything
+      itself: identity-service has no CORS configured, so a direct browser call to its
+      <code>/cards/sign</code> from this page would be blocked by every real browser. Get a
+      signature first:
+      <code>curl -X POST http://localhost:8090/cards/sign \
+  -H "Authorization: Bearer &lt;a token scoped for agentcard:sign&gt;" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "my-agent", "version": "0.1.0", "url": "...", "capabilities": {}}'</code>
+      then paste the response's three fields below, alongside a bearer token scoped for
+      <code>registry:publish</code> (the same token can hold both scopes).
+    </div>
+
+    <form id="publish-form">
+      <label for="token">Bearer token</label>
+      <input type="password" id="token" autocomplete="off" required />
+
+      <label for="card">Card JSON (must match what was signed, exactly)</label>
+      <textarea id="card" required>{"name": "my-agent", "version": "0.1.0", "url": "...", "capabilities": {}}</textarea>
+
+      <label for="signing-algorithm">Signing algorithm</label>
+      <input type="text" id="signing-algorithm" value="RS256" required />
+
+      <label for="signing-key-id">Signing key id</label>
+      <input type="text" id="signing-key-id" required />
+
+      <label for="signature-value">Signature value</label>
+      <textarea id="signature-value" required placeholder="the JWT from /cards/sign's response"></textarea>
+
+      <button type="submit" class="primary">Publish</button>
+    </form>
+    <div id="publish-result"></div>
+  </section>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  function el(tag, opts) {
+    const node = document.createElement(tag);
+    if (opts) {
+      if (opts.text !== undefined) node.textContent = opts.text;
+      if (opts.class) node.className = opts.class;
+      if (opts.attrs) for (const k in opts.attrs) node.setAttribute(k, opts.attrs[k]);
+    }
+    return node;
+  }
+
+  function clear(node) {
+    while (node.firstChild) node.removeChild(node.firstChild);
+  }
+
+  async function errorMessage(resp) {
+    try {
+      const data = await resp.json();
+      if (data && data.error) return data.error.code + ": " + data.error.message;
+    } catch (_err) { /* fall through */ }
+    return "request failed: " + resp.status;
+  }
+
+  // ---- tabs ----
+  const tabBrowse = document.getElementById("tab-browse");
+  const tabAdvanced = document.getElementById("tab-advanced");
+  const panelBrowse = document.getElementById("panel-browse");
+  const panelAdvanced = document.getElementById("panel-advanced");
+
+  function showTab(name) {
+    const browsing = name === "browse";
+    tabBrowse.classList.toggle("active", browsing);
+    tabAdvanced.classList.toggle("active", !browsing);
+    panelBrowse.classList.toggle("active", browsing);
+    panelAdvanced.classList.toggle("active", !browsing);
+  }
+  tabBrowse.addEventListener("click", () => showTab("browse"));
+  tabAdvanced.addEventListener("click", () => showTab("advanced"));
+
+  // ---- browse (fully public -- no bearer token on any GET route here) ----
+  const listEl = document.getElementById("list");
+  const searchEl = document.getElementById("search");
+
+  async function loadList(q) {
+    clear(listEl);
+    let rows;
+    try {
+      const resp = await fetch("/agents");
+      if (!resp.ok) throw new Error(await errorMessage(resp));
+      rows = await resp.json();
+    } catch (err) {
+      listEl.appendChild(el("div", { class: "empty", text: "Couldn't load agents: " + err.message }));
+      return;
+    }
+    const needle = (q || "").trim().toLowerCase();
+    const filtered = needle
+      ? rows.filter((r) => r.name.toLowerCase().includes(needle) || (r.description || "").toLowerCase().includes(needle))
+      : rows;
+    if (filtered.length === 0) {
+      listEl.appendChild(el("div", { class: "empty", text: rows.length === 0 ? "No agents published yet." : "No agents match." }));
+      return;
+    }
+    for (const row of filtered) {
+      const wrap = el("div", { class: "card-wrap" });
+      const card = el("div", { class: "card" });
+      const titleRow = el("div", { attrs: { style: "display:flex; justify-content:space-between; align-items:baseline; gap:0.6rem;" } });
+      const titleLeft = el("div", { attrs: { style: "display:flex; align-items:baseline; gap:0.4rem;" } });
+      const chevron = el("span", { class: "chevron", text: "▸" });
+      titleLeft.appendChild(chevron);
+      titleLeft.appendChild(el("h3", { text: row.name }));
+      titleRow.appendChild(titleLeft);
+      titleRow.appendChild(el("span", { class: "badge", text: "v" + row.version }));
+      card.appendChild(titleRow);
+      if (row.description) card.appendChild(el("p", { text: row.description }));
+      card.appendChild(el("div", { class: "url", text: row.url }));
+      if (row.skills && row.skills.length > 0) {
+        const tags = el("div", { attrs: { style: "margin-top: 0.4rem;" } });
+        for (const s of row.skills) tags.appendChild(el("span", { class: "chip", text: s }));
+        card.appendChild(tags);
+      }
+      const detailBox = el("div", { class: "card-detail" });
+      card.addEventListener("click", () => {
+        const isOpen = detailBox.classList.toggle("open");
+        card.classList.toggle("active", isOpen);
+        chevron.textContent = isOpen ? "▾" : "▸";
+        if (isOpen) {
+          renderDetail(detailBox, row.name, row.version);
+        } else {
+          clear(detailBox);
+        }
+      });
+      wrap.appendChild(card);
+      wrap.appendChild(detailBox);
+      listEl.appendChild(wrap);
+    }
+  }
+
+  // Renders a card's detail inline, as a sibling right after the card itself -- same accordion
+  // pattern Eval Registry landed on after three UX iterations (D-108): expand where the user
+  // clicked, never a separate panel elsewhere on the page.
+  async function renderDetail(container, name, version) {
+    clear(container);
+    let agent;
+    try {
+      const resp = await fetch("/agents/" + encodeURIComponent(name) + "/" + encodeURIComponent(version));
+      if (!resp.ok) throw new Error(await errorMessage(resp));
+      agent = await resp.json();
+    } catch (err) {
+      container.appendChild(el("div", { class: "empty", text: "Couldn't load card: " + err.message }));
+      return;
+    }
+
+    const card = agent.card || {};
+    const box = el("div", { class: "detail" });
+
+    const topRow = el("div", { attrs: { style: "display:flex; justify-content:space-between; align-items:baseline;" } });
+    topRow.appendChild(el("div", { text: name + " · v" + version, attrs: { style: "font-family: var(--mono); font-weight: 600;" } }));
+    const verifyBtn = el("button", { class: "primary", text: "Verify signature", attrs: { style: "margin-top: 0;" } });
+    topRow.appendChild(verifyBtn);
+    box.appendChild(topRow);
+
+    const verifyResultEl = el("div");
+    box.appendChild(verifyResultEl);
+    verifyBtn.addEventListener("click", async (event) => {
+      event.stopPropagation();
+      clear(verifyResultEl);
+      verifyBtn.disabled = true;
+      try {
+        const resp = await fetch("/agents/" + encodeURIComponent(name) + "/" + encodeURIComponent(version) + "/verify");
+        if (!resp.ok) throw new Error(await errorMessage(resp));
+        const result = await resp.json();
+        const badge = el("span", {
+          class: "badge " + (result.valid ? "valid" : "invalid"),
+          text: result.valid ? "signature valid" : "signature INVALID",
+        });
+        const line = el("div", { attrs: { style: "margin-top: 0.5rem;" } });
+        line.appendChild(badge);
+        if (!result.valid && result.reason) {
+          line.appendChild(el("span", { text: " -- " + result.reason, attrs: { style: "margin-left: 0.5rem; color: var(--text-dim); font-size: 0.85rem;" } }));
+        }
+        verifyResultEl.appendChild(line);
+      } catch (err) {
+        verifyResultEl.appendChild(el("div", { class: "result err", text: "Couldn't verify: " + err.message }));
+      } finally {
+        verifyBtn.disabled = false;
+      }
+    });
+
+    const urlField = el("div", { class: "field", attrs: { style: "margin-top: 0.9rem;" } });
+    urlField.appendChild(el("div", { class: "field-label", text: "URL" }));
+    urlField.appendChild(el("div", { text: card.url || "", class: "url" }));
+    box.appendChild(urlField);
+
+    if (card.capabilities) {
+      const capField = el("div", { class: "field" });
+      capField.appendChild(el("div", { class: "field-label", text: "Capabilities" }));
+      const chips = el("div");
+      for (const [k, v] of Object.entries(card.capabilities)) {
+        chips.appendChild(el("span", { class: "chip", text: k + ": " + JSON.stringify(v) }));
+      }
+      capField.appendChild(chips);
+      box.appendChild(capField);
+    }
+
+    if (card.extensions && card.extensions.length > 0) {
+      const extField = el("div", { class: "field" });
+      extField.appendChild(el("div", { class: "field-label", text: "Extensions" }));
+      for (const ext of card.extensions) {
+        const extBox = el("div", { attrs: { style: "margin-bottom: 0.5rem;" } });
+        extBox.appendChild(el("div", { text: ext.uri, class: "url" }));
+        if (ext.description) extBox.appendChild(el("div", { text: ext.description, attrs: { style: "font-size: 0.82rem; color: var(--text-dim);" } }));
+        if (ext.params) extBox.appendChild(el("pre", { class: "block", text: JSON.stringify(ext.params, null, 2), attrs: { style: "margin-top: 0.3rem;" } }));
+        extField.appendChild(extBox);
+      }
+      box.appendChild(extField);
+    }
+
+    const sigField = el("div", { class: "field" });
+    sigField.appendChild(el("div", { class: "field-label", text: "Signature" }));
+    sigField.appendChild(el("div", { text: (agent.signature.signing_algorithm || "") + " · key " + (agent.signature.signing_key_id || ""), class: "url" }));
+    box.appendChild(sigField);
+
+    const metaField = el("div", { class: "field" });
+    metaField.appendChild(el("div", { class: "field-label", text: "Published" }));
+    metaField.appendChild(el("div", { text: (agent.published_by || "") + " · " + new Date(agent.created_at).toLocaleString() }));
+    box.appendChild(metaField);
+
+    const rawField = el("div", { class: "field" });
+    rawField.appendChild(el("div", { class: "field-label", text: "Raw card JSON" }));
+    rawField.appendChild(el("pre", { class: "block", text: JSON.stringify(card, null, 2) }));
+    box.appendChild(rawField);
+
+    container.appendChild(box);
+  }
+
+  let searchTimer;
+  searchEl.addEventListener("input", () => {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => loadList(searchEl.value.trim()), 250);
+  });
+
+  // ---- advanced: manual publish ----
+  const form = document.getElementById("publish-form");
+  const resultEl = document.getElementById("publish-result");
+
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    clear(resultEl);
+
+    const token = document.getElementById("token").value.trim();
+    let card;
+    try {
+      card = JSON.parse(document.getElementById("card").value);
+    } catch (_err) {
+      resultEl.appendChild(el("div", { class: "result err", text: "Card must be valid JSON." }));
+      return;
+    }
+
+    const body = {
+      card: card,
+      signature: {
+        signing_algorithm: document.getElementById("signing-algorithm").value.trim(),
+        signing_key_id: document.getElementById("signing-key-id").value.trim(),
+        signature_value: document.getElementById("signature-value").value.trim(),
+      },
+    };
+
+    const submitBtn = form.querySelector("button[type=submit]");
+    submitBtn.disabled = true;
+    try {
+      const resp = await fetch("/agents", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+        body: JSON.stringify(body),
+      });
+      const data = await resp.json();
+      if (!resp.ok) {
+        const message = (data && data.error && data.error.message) || "publish failed";
+        resultEl.appendChild(el("div", { class: "result err", text: message }));
+      } else {
+        resultEl.appendChild(el("div", { class: "result ok", text: "Published " + data.name + " v" + data.version + "." }));
+        form.reset();
+        document.getElementById("signing-algorithm").value = "RS256";
+        showTab("browse");
+        searchEl.value = "";
+        await loadList("");
+        const cards = [...listEl.querySelectorAll(".card")];
+        const newCard = cards.find((c) => c.querySelector("h3") && c.querySelector("h3").textContent === data.name);
+        if (newCard) {
+          newCard.click();
+          newCard.scrollIntoView({ behavior: "smooth", block: "center" });
+        }
+      }
+    } catch (err) {
+      resultEl.appendChild(el("div", { class: "result err", text: "Network error: " + err.message }));
+    } finally {
+      submitBtn.disabled = false;
+    }
+  });
+
+  loadList("");
+})();
+</script>
+</body>
+</html>
