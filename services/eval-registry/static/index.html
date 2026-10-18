@@ -110,13 +110,17 @@
     font-size: 0.85rem;
   }
 
+  .card-wrap { margin-bottom: 0.6rem; }
+  .card-detail { display: none; }
+  .card-detail.open { display: block; }
+
   .card {
     background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
-    padding: 0.9rem 1rem; margin-bottom: 0.6rem; cursor: pointer;
+    padding: 0.9rem 1rem; cursor: pointer;
   }
   .card:hover { border-color: var(--accent); }
-  .card h3 { margin: 0 0 0.25rem; font-size: 0.98rem; font-family: var(--mono); }
-  .card p { margin: 0; color: var(--text-dim); font-size: 0.86rem; }
+  .card h3 { margin: 0; font-size: 0.98rem; font-family: var(--mono); }
+  .card p { margin: 0.25rem 0 0; color: var(--text-dim); font-size: 0.86rem; }
   .card .tags { margin-top: 0.4rem; }
 
   .chip {
@@ -206,7 +210,6 @@
   <section id="panel-browse" class="panel active">
     <input type="search" id="search" placeholder="Search by name or description…" />
     <div id="list" style="margin-top: 1rem;"></div>
-    <div id="detail-slot"></div>
   </section>
 
   <section id="panel-publish" class="panel">
@@ -300,7 +303,6 @@
 
   // ---- browse (fully public -- no bearer token on any GET route here) ----
   const listEl = document.getElementById("list");
-  const detailSlot = document.getElementById("detail-slot");
   const searchEl = document.getElementById("search");
 
   async function loadList(q) {
@@ -323,9 +325,14 @@
       return;
     }
     for (const row of filtered) {
+      const wrap = el("div", { class: "card-wrap" });
       const card = el("div", { class: "card" });
       const titleRow = el("div", { attrs: { style: "display:flex; justify-content:space-between; align-items:baseline; gap:0.6rem;" } });
-      titleRow.appendChild(el("h3", { text: row.name }));
+      const titleLeft = el("div", { attrs: { style: "display:flex; align-items:baseline; gap:0.4rem;" } });
+      const chevron = el("span", { class: "chevron", text: "▸" });
+      titleLeft.appendChild(chevron);
+      titleLeft.appendChild(el("h3", { text: row.name }));
+      titleRow.appendChild(titleLeft);
       titleRow.appendChild(el("span", { class: "badge" + (row.kind === "redteam" ? " redteam" : ""), text: row.kind }));
       card.appendChild(titleRow);
       card.appendChild(el("p", { text: row.description }));
@@ -334,8 +341,19 @@
         for (const t of row.applies_to) tags.appendChild(el("span", { class: "chip", text: t }));
         card.appendChild(tags);
       }
-      card.addEventListener("click", () => loadDetail(row.name));
-      listEl.appendChild(card);
+      const detailBox = el("div", { class: "card-detail" });
+      card.addEventListener("click", () => {
+        const isOpen = detailBox.classList.toggle("open");
+        chevron.textContent = isOpen ? "▾" : "▸";
+        if (isOpen) {
+          renderDetail(detailBox, row.name);
+        } else {
+          clear(detailBox);
+        }
+      });
+      wrap.appendChild(card);
+      wrap.appendChild(detailBox);
+      listEl.appendChild(wrap);
     }
   }
 
@@ -346,8 +364,13 @@
     return row;
   }
 
-  async function loadDetail(name, version) {
-    clear(detailSlot);
+  // Renders a suite's detail INLINE into `container` -- a sibling of the card that was clicked,
+  // not a separate panel elsewhere on the page. Reported real UX bug: the previous design put
+  // the detail panel after the whole (50-suite) list, so clicking an early card updated content
+  // far off-screen below -- scrolling to it was a patch; expanding in place, where the click
+  // happened, is the actual fix.
+  async function renderDetail(container, name, version) {
+    clear(container);
     let suite;
     try {
       const path = version
@@ -357,8 +380,7 @@
       if (!resp.ok) throw new Error(await errorMessage(resp));
       suite = await resp.json();
     } catch (err) {
-      detailSlot.appendChild(el("div", { class: "empty", text: "Couldn't load suite: " + err.message }));
-      detailSlot.scrollIntoView({ behavior: "smooth", block: "start" });
+      container.appendChild(el("div", { class: "empty", text: "Couldn't load suite: " + err.message }));
       return;
     }
 
@@ -376,7 +398,7 @@
     const versionInput = el("input", { attrs: { type: "text", placeholder: "version (blank = latest)" } });
     versionInput.value = suite.version;
     const goBtn = el("button", { text: "Load version" });
-    goBtn.addEventListener("click", () => loadDetail(name, versionInput.value.trim() || undefined));
+    goBtn.addEventListener("click", () => renderDetail(container, name, versionInput.value.trim() || undefined));
     fieldRow.appendChild(versionInput);
     fieldRow.appendChild(goBtn);
     box.appendChild(fieldRow);
@@ -447,8 +469,7 @@
       box.appendChild(findingsField);
     }
 
-    detailSlot.appendChild(box);
-    detailSlot.scrollIntoView({ behavior: "smooth", block: "start" });
+    container.appendChild(box);
   }
 
   // Parses the dataset file's goldens (one JSON object per non-blank line) and renders each as
@@ -587,8 +608,16 @@
         form.reset();
         kindSelect.dispatchEvent(new Event("change"));
         showTab("browse");
-        await loadList(searchEl.value.trim());
-        await loadDetail(data.name, data.version);
+        searchEl.value = "";
+        await loadList("");
+        // Find the just-published suite's own card and open it in place, same as a real click
+        // would -- there's no separate detail panel to target anymore.
+        const cards = [...listEl.querySelectorAll(".card")];
+        const newCard = cards.find((c) => c.querySelector("h3") && c.querySelector("h3").textContent === data.name);
+        if (newCard) {
+          newCard.click();
+          newCard.scrollIntoView({ behavior: "smooth", block: "center" });
+        }
       }
     } catch (err) {
       resultEl.appendChild(el("div", { class: "result err", text: "Network error: " + err.message }));
