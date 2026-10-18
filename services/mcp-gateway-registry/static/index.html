@@ -1,0 +1,473 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>MCP Gateway Registry</title>
+<style>
+  :root {
+    --bg: #f7f7f5;
+    --surface: #ffffff;
+    --border: #e2e0da;
+    --text: #24231f;
+    --text-dim: #6b6a63;
+    --accent: #7a5cff;
+    --accent-ink: #ffffff;
+    --danger: #b3261e;
+    --danger-bg: #fbebea;
+    --warn: #8a5a00;
+    --warn-bg: #fdf3dc;
+    --ok: #146c2e;
+    --ok-bg: #e8f6ec;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #17161c;
+      --surface: #201f27;
+      --border: #34323d;
+      --text: #ece9f7;
+      --text-dim: #a29fb3;
+      --accent: #a48bff;
+      --accent-ink: #17161c;
+      --danger: #ff8f87;
+      --danger-bg: #3a201f;
+      --warn: #f0c26b;
+      --warn-bg: #3a2f14;
+      --ok: #7fd99a;
+      --ok-bg: #16301f;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #17161c;
+    --surface: #201f27;
+    --border: #34323d;
+    --text: #ece9f7;
+    --text-dim: #a29fb3;
+    --accent: #a48bff;
+    --accent-ink: #17161c;
+    --danger: #ff8f87;
+    --danger-bg: #3a201f;
+    --warn: #f0c26b;
+    --warn-bg: #3a2f14;
+    --ok: #7fd99a;
+    --ok-bg: #16301f;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    line-height: 1.5;
+  }
+  .wrap { max-width: 1040px; margin: 0 auto; padding: 2rem 1.5rem 4rem; }
+  header { margin-bottom: 1.5rem; }
+  header h1 { font-size: 1.5rem; margin: 0 0 0.25rem; letter-spacing: -0.01em; }
+  header p { margin: 0; color: var(--text-dim); font-size: 0.95rem; }
+
+  .token-bar {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+    padding: 0.8rem 1rem; margin-bottom: 1.5rem; display: flex; gap: 0.7rem; align-items: center;
+  }
+  .token-bar label { margin: 0; white-space: nowrap; font-size: 0.82rem; color: var(--text-dim); }
+  .token-bar input { flex: 1; }
+  .hint { font-size: 0.76rem; color: var(--text-dim); }
+
+  nav { display: flex; gap: 0.5rem; border-bottom: 1px solid var(--border); margin-bottom: 1.5rem; }
+  nav button {
+    background: none; border: none; cursor: pointer;
+    padding: 0.6rem 0.9rem; font-size: 0.9rem; color: var(--text-dim);
+    border-bottom: 2px solid transparent; margin-bottom: -1px;
+    font-family: inherit;
+  }
+  nav button.active { color: var(--text); border-bottom-color: var(--accent); font-weight: 600; }
+
+  .panel { display: none; }
+  .panel.active { display: block; }
+
+  input[type="text"], input[type="password"] {
+    width: 100%; padding: 0.55rem 0.7rem; border-radius: 8px;
+    border: 1px solid var(--border); background: var(--surface); color: var(--text);
+    font-family: inherit; font-size: 0.9rem;
+  }
+  textarea {
+    width: 100%; padding: 0.55rem 0.7rem; border-radius: 8px;
+    border: 1px solid var(--border); background: var(--surface); color: var(--text);
+    font-family: var(--mono); font-size: 0.85rem; resize: vertical; min-height: 5rem;
+  }
+  label { display: block; font-size: 0.82rem; color: var(--text-dim); margin: 0.9rem 0 0.3rem; }
+  label:first-child { margin-top: 0; }
+
+  button.primary {
+    background: var(--accent); color: var(--accent-ink); border: none;
+    border-radius: 8px; padding: 0.6rem 1.1rem; font-size: 0.9rem; font-weight: 600;
+    cursor: pointer; font-family: inherit; margin-top: 1.1rem;
+  }
+  button.primary:disabled { opacity: 0.55; cursor: default; }
+  button.ghost {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+    padding: 0.5rem 0.8rem; cursor: pointer; font-family: inherit; color: var(--text);
+    font-size: 0.85rem;
+  }
+
+  table { border-collapse: collapse; width: 100%; margin-top: 0.5rem; }
+  th, td { text-align: left; padding: 0.6rem 0.5rem; font-size: 0.86rem; border-bottom: 1px solid var(--border); }
+  th { color: var(--text-dim); font-weight: 600; font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.03em; }
+  tbody tr:hover td { background: var(--surface); }
+
+  .badge {
+    display: inline-flex; border-radius: 10px; padding: 0.1rem 0.5rem; font-size: 0.76rem; font-weight: 600;
+  }
+  .badge.ok { background: var(--ok-bg); color: var(--ok); }
+  .badge.warn { background: var(--warn-bg); color: var(--warn); }
+  .badge.danger { background: var(--danger-bg); color: var(--danger); }
+
+  .mono { font-family: var(--mono); }
+
+  .empty { color: var(--text-dim); font-size: 0.9rem; padding: 1.5rem 0; text-align: center; }
+
+  .card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+    padding: 1.1rem 1.2rem; margin-top: 1rem;
+  }
+  .card h2 { margin: 0 0 0.6rem; font-size: 1.05rem; }
+  .field-label { font-size: 0.74rem; font-weight: 600; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.03em; margin-bottom: 0.2rem; }
+  .field { margin-bottom: 0.9rem; }
+
+  pre.block {
+    background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+    padding: 0.9rem; overflow-x: auto; font-family: var(--mono); font-size: 0.8rem;
+    white-space: pre-wrap; word-break: break-word; max-height: 18rem; overflow-y: auto; margin: 0;
+  }
+
+  .result {
+    margin-top: 1.1rem; padding: 0.8rem 1rem; border-radius: 8px; font-size: 0.86rem;
+  }
+  .result.ok { background: var(--ok-bg); color: var(--ok); }
+  .result.err { background: var(--danger-bg); color: var(--danger); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>MCP Gateway Registry</h1>
+    <p>Register MCP servers, browse their federated tools, and test-call one -- via the façade, never ContextForge's own admin UI directly.</p>
+  </header>
+
+  <div class="token-bar">
+    <label for="token">Bearer token</label>
+    <input type="password" id="token" autocomplete="off" placeholder="paste a token scoped for mcp_gateway_registry:call" />
+  </div>
+  <p class="hint" style="margin: -1rem 0 1.5rem;">
+    Pasted directly, never a client id/secret form. Every route on this service requires a valid
+    token, including browsing -- there's no public-read tier.
+  </p>
+
+  <nav>
+    <button id="tab-servers" class="active">MCP Servers</button>
+    <button id="tab-tools">Tools</button>
+  </nav>
+
+  <section id="panel-servers" class="panel active">
+    <div style="display:flex; justify-content:space-between; align-items:center;">
+      <button class="ghost" id="refresh-servers">Refresh</button>
+      <button class="ghost" id="toggle-register">Register server</button>
+    </div>
+
+    <div class="card" id="register-card" style="display:none;">
+      <h2>Register MCP server</h2>
+      <form id="register-form">
+        <label for="server-name">Name</label>
+        <input type="text" id="server-name" required />
+
+        <label for="server-url">URL</label>
+        <input type="text" id="server-url" required />
+
+        <label for="server-transport">Transport</label>
+        <input type="text" id="server-transport" value="SSE" required />
+
+        <button type="submit" class="primary">Register</button>
+      </form>
+      <div id="register-result"></div>
+    </div>
+
+    <div id="servers-list" style="margin-top: 1rem;"></div>
+  </section>
+
+  <section id="panel-tools" class="panel">
+    <button class="ghost" id="refresh-tools">Refresh</button>
+    <div id="tools-list" style="margin-top: 1rem;"></div>
+    <div id="console-slot"></div>
+  </section>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  function el(tag, opts) {
+    const node = document.createElement(tag);
+    if (opts) {
+      if (opts.text !== undefined) node.textContent = opts.text;
+      if (opts.class) node.className = opts.class;
+      if (opts.attrs) for (const k in opts.attrs) node.setAttribute(k, opts.attrs[k]);
+    }
+    return node;
+  }
+
+  function clear(node) {
+    while (node.firstChild) node.removeChild(node.firstChild);
+  }
+
+  function authHeaders() {
+    const token = document.getElementById("token").value.trim();
+    return token ? { Authorization: "Bearer " + token } : {};
+  }
+
+  async function errorMessage(resp) {
+    try {
+      const data = await resp.json();
+      if (data && data.error) return data.error.code + ": " + data.error.message;
+    } catch (_err) { /* fall through */ }
+    return "request failed: " + resp.status;
+  }
+
+  // ---- tabs ----
+  const tabServers = document.getElementById("tab-servers");
+  const tabTools = document.getElementById("tab-tools");
+  const panelServers = document.getElementById("panel-servers");
+  const panelTools = document.getElementById("panel-tools");
+
+  function showTab(name) {
+    const servers = name === "servers";
+    tabServers.classList.toggle("active", servers);
+    tabTools.classList.toggle("active", !servers);
+    panelServers.classList.toggle("active", servers);
+    panelTools.classList.toggle("active", !servers);
+  }
+  tabServers.addEventListener("click", () => showTab("servers"));
+  tabTools.addEventListener("click", () => showTab("tools"));
+
+  function serverStatusBadge(row) {
+    if (row.enabled === false) return el("span", { class: "badge warn", text: "disabled" });
+    if (row.reachable === false) return el("span", { class: "badge danger", text: "unreachable" });
+    return el("span", { class: "badge ok", text: row.status || "active" });
+  }
+
+  // ---- servers ----
+  const serversList = document.getElementById("servers-list");
+
+  async function loadServers() {
+    clear(serversList);
+    let rows;
+    try {
+      const resp = await fetch("/mcp-servers", { headers: authHeaders() });
+      if (!resp.ok) throw new Error(await errorMessage(resp));
+      rows = await resp.json();
+    } catch (err) {
+      serversList.appendChild(el("div", { class: "empty", text: "Couldn't load servers: " + err.message }));
+      return;
+    }
+    if (rows.length === 0) {
+      serversList.appendChild(el("div", { class: "empty", text: "No MCP servers registered. Click \"Register server\" above." }));
+      return;
+    }
+    const table = el("table");
+    const thead = el("thead");
+    const headRow = el("tr");
+    for (const h of ["Name", "URL", "Transport", "Status", "Tools", "Last seen"]) {
+      headRow.appendChild(el("th", { text: h }));
+    }
+    thead.appendChild(headRow);
+    table.appendChild(thead);
+    const tbody = el("tbody");
+    for (const row of rows) {
+      const tr = el("tr");
+      tr.appendChild(el("td", { text: row.name, class: "mono" }));
+      tr.appendChild(el("td", { text: row.url, class: "mono" }));
+      tr.appendChild(el("td", { text: row.transport || "", class: "mono" }));
+      const statusCell = el("td");
+      statusCell.appendChild(serverStatusBadge(row));
+      tr.appendChild(statusCell);
+      tr.appendChild(el("td", { text: row.toolCount !== undefined ? String(row.toolCount) : "—" }));
+      tr.appendChild(el("td", { text: row.lastSeen ? new Date(row.lastSeen).toLocaleString() : "—" }));
+      tbody.appendChild(tr);
+    }
+    table.appendChild(tbody);
+    serversList.appendChild(table);
+  }
+
+  document.getElementById("refresh-servers").addEventListener("click", loadServers);
+
+  const registerCard = document.getElementById("register-card");
+  const toggleRegister = document.getElementById("toggle-register");
+  toggleRegister.addEventListener("click", () => {
+    const showing = registerCard.style.display !== "none";
+    registerCard.style.display = showing ? "none" : "block";
+    toggleRegister.textContent = showing ? "Register server" : "Cancel";
+  });
+
+  const registerForm = document.getElementById("register-form");
+  const registerResult = document.getElementById("register-result");
+  registerForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    clear(registerResult);
+    const body = {
+      name: document.getElementById("server-name").value.trim(),
+      url: document.getElementById("server-url").value.trim(),
+      transport: document.getElementById("server-transport").value.trim() || "SSE",
+    };
+    const submitBtn = registerForm.querySelector("button[type=submit]");
+    submitBtn.disabled = true;
+    try {
+      const resp = await fetch("/mcp-servers", {
+        method: "POST",
+        headers: Object.assign({ "Content-Type": "application/json" }, authHeaders()),
+        body: JSON.stringify(body),
+      });
+      if (!resp.ok) {
+        registerResult.appendChild(el("div", { class: "result err", text: await errorMessage(resp) }));
+        return;
+      }
+      const data = await resp.json();
+      registerResult.appendChild(el("div", { class: "result ok", text: "Registered " + data.name + "." }));
+      registerForm.reset();
+      document.getElementById("server-transport").value = "SSE";
+      registerCard.style.display = "none";
+      toggleRegister.textContent = "Register server";
+      await loadServers();
+    } catch (err) {
+      registerResult.appendChild(el("div", { class: "result err", text: "Network error: " + err.message }));
+    } finally {
+      submitBtn.disabled = false;
+    }
+  });
+
+  // ---- tools ----
+  const toolsList = document.getElementById("tools-list");
+  const consoleSlot = document.getElementById("console-slot");
+  let toolRows = [];
+
+  async function loadTools() {
+    clear(toolsList);
+    clear(consoleSlot);
+    try {
+      const resp = await fetch("/tools", { headers: authHeaders() });
+      if (!resp.ok) throw new Error(await errorMessage(resp));
+      toolRows = await resp.json();
+    } catch (err) {
+      toolsList.appendChild(el("div", { class: "empty", text: "Couldn't load tools: " + err.message }));
+      return;
+    }
+    if (toolRows.length === 0) {
+      toolsList.appendChild(el("div", { class: "empty", text: "No tools federated yet -- register an MCP server first." }));
+      return;
+    }
+    const table = el("table");
+    const thead = el("thead");
+    const headRow = el("tr");
+    for (const h of ["Federated name", "Original name", "Server", "Description", "", ""]) {
+      headRow.appendChild(el("th", { text: h }));
+    }
+    thead.appendChild(headRow);
+    table.appendChild(thead);
+    const tbody = el("tbody");
+    for (const row of toolRows) {
+      const tr = el("tr");
+      tr.appendChild(el("td", { text: row.name, class: "mono" }));
+      tr.appendChild(el("td", { text: row.originalName || "", class: "mono" }));
+      tr.appendChild(el("td", { text: row.gatewaySlug || "", class: "mono" }));
+      tr.appendChild(el("td", { text: row.description || "" }));
+      const statusCell = el("td");
+      if (row.enabled === false) statusCell.appendChild(el("span", { class: "badge warn", text: "disabled" }));
+      else if (row.reachable === false) statusCell.appendChild(el("span", { class: "badge danger", text: "unreachable" }));
+      tr.appendChild(statusCell);
+      const actionCell = el("td");
+      const tryBtn = el("button", { class: "ghost", text: "Try it" });
+      tryBtn.addEventListener("click", () => showConsole(row));
+      actionCell.appendChild(tryBtn);
+      tr.appendChild(actionCell);
+      tbody.appendChild(tr);
+    }
+    table.appendChild(tbody);
+    toolsList.appendChild(table);
+  }
+
+  document.getElementById("refresh-tools").addEventListener("click", loadTools);
+
+  function showConsole(tool) {
+    clear(consoleSlot);
+    const box = el("div", { class: "card" });
+    box.appendChild(el("h2", { text: tool.name }));
+
+    if (tool.inputSchema) {
+      const schemaField = el("div", { class: "field" });
+      schemaField.appendChild(el("div", { class: "field-label", text: "Input schema (reference only)" }));
+      schemaField.appendChild(el("pre", { class: "block", text: JSON.stringify(tool.inputSchema, null, 2) }));
+      box.appendChild(schemaField);
+    }
+
+    const argsField = el("div", { class: "field" });
+    argsField.appendChild(el("div", { class: "field-label", text: "Arguments (JSON)" }));
+    const argsInput = el("textarea", { attrs: { id: "call-arguments" } });
+    argsInput.value = "{}";
+    argsField.appendChild(argsInput);
+    box.appendChild(argsField);
+
+    const callBtn = el("button", { class: "primary", text: "Call tool" });
+    box.appendChild(callBtn);
+
+    const resultSlot = el("div");
+    box.appendChild(resultSlot);
+
+    callBtn.addEventListener("click", async () => {
+      clear(resultSlot);
+      let args;
+      try {
+        args = JSON.parse(argsInput.value || "{}");
+      } catch (_err) {
+        resultSlot.appendChild(el("div", { class: "result err", text: "Arguments must be valid JSON." }));
+        return;
+      }
+      callBtn.disabled = true;
+      try {
+        const resp = await fetch("/tools/" + encodeURIComponent(tool.name) + "/call", {
+          method: "POST",
+          headers: Object.assign({ "Content-Type": "application/json" }, authHeaders()),
+          body: JSON.stringify({ arguments: args }),
+        });
+        if (!resp.ok) {
+          resultSlot.appendChild(el("div", { class: "result err", text: await errorMessage(resp) }));
+          return;
+        }
+        const body = await resp.json();
+        // A 200 can still carry a JSON-RPC-level failure (an "error" key, no "result") when the
+        // tool call itself failed -- checked live, not assumed. HTTP success alone doesn't mean
+        // the call succeeded.
+        if (body && body.error) {
+          resultSlot.appendChild(el("div", {
+            class: "result err",
+            text: "Tool error " + body.error.code + ": " + body.error.message,
+          }));
+          return;
+        }
+        resultSlot.appendChild(el("pre", { class: "block", text: JSON.stringify(body, null, 2) }));
+      } catch (err) {
+        resultSlot.appendChild(el("div", { class: "result err", text: "Network error: " + err.message }));
+      } finally {
+        callBtn.disabled = false;
+      }
+    });
+
+    consoleSlot.appendChild(box);
+  }
+
+  loadServers();
+  loadTools();
+})();
+</script>
+</body>
+</html>
