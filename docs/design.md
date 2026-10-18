@@ -120,34 +120,43 @@ same as Agent Builder, there is no public-browse tier.
 
 ## Eval Registry UI — `eval-registry`
 
-Landing view: **Suites**. Corrected against the real running service before writing the page
-(D-107): **browsing is fully public here** — `GET /suites`/`GET /suites/{name}[/{version}]`/
+**Status: built** (`feat/ui-eval-registry`; D-037, D-107, D-108). Landing view: **Suites**.
+Corrected against the real running service before writing the page (D-107): **browsing is fully
+public here** — `GET /suites`/`GET /suites/{name}[/{version}]`/
 `GET /suites/{name}/{version}/dataset` have no `Depends(require_identity)` at all, same posture
 as Skill Registry, unlike Agent Builder/MCP Gateway Registry where every route needs a token.
 Only `POST /suites` needs a bearer token (`eval_registry:publish`). And **`GET /suites` returns
 no version field at all** — it's deduped to one row per name (`{name, description, kind,
-applies_to}`), already collapsed to the latest; a version only appears once you open a suite's
-detail. The earlier design draft's "name, latest version, kind, applies_to" list column assumed
-a field the list response doesn't have.
+applies_to}`), already collapsed to the latest; a version only appears once a suite is opened.
 
 1. **Suites list** — `GET /suites`: name, description, kind badge (`cases`/`redteam`),
-   applies_to tags. No bearer token needed to view this. Row click → detail (which does carry
-   version, fetched separately via `GET /suites/{name}`).
-2. **Suite detail** — kind-specific body, confirmed from a real published suite (47 live, all
-   `kind=cases`; no `redteam` suite exists anywhere in this platform yet, nothing publishes one):
-   `cases` suites show the metrics envelope (`engine`/`metric_id`/`params` — real engines are
-   `deepeval`/`ragas`/`promptfoo`/`custom`, per `KNOWN_ENGINES`) and a "Download dataset" button;
-   `redteam` suites would show `redteam_config.purpose` (required) and whatever else is in that
-   object instead of a dataset. Also shows `scan_findings` (D-038/D-041's judge-rubric scan
-   warnings) when any exist — real field, empty list on every suite checked so far, not
-   something the earlier draft mentioned at all.
+   applies_to tags. No bearer token needed to view this.
+2. **Suite detail — inline accordion, not a separate panel (D-108).** Clicking a card expands
+   its detail directly beneath it, in place, with a chevron and a tinted/accent-bordered active
+   state so it's visually obvious which card is open; clicking again collapses it. The first
+   build put the detail into one page-level slot after the whole (50-suite) list — functionally
+   fine, but invisible to the user clicking an early card, since the rendered content was far
+   off-screen below; a scroll-into-view patch was tried first and then replaced with the actual
+   fix once it was clear scrolling the user somewhere else on page load is itself the wrong
+   interaction, not just under-signposted. Kind-specific body, confirmed from a real published
+   suite (47 live, all `kind=cases`; no `redteam` suite exists anywhere in this platform yet,
+   nothing publishes one): `cases` suites show the metrics envelope
+   (`engine`/`metric_id`/`params` — real engines are `deepeval`/`ragas`/`promptfoo`/`custom`, per
+   `KNOWN_ENGINES`), a "Download dataset" link, and **each golden case individually,
+   expandable** — fetched from the same public dataset endpoint, parsed client-side, one
+   collapsible row per case (input as the summary, full golden JSON on expand); `redteam` suites
+   would show `redteam_config.purpose` (required) and whatever else is in that object instead of
+   a dataset. Also shows `scan_findings` (D-038/D-041's judge-rubric scan warnings) when any
+   exist — real field, empty on every suite checked so far.
 3. **Publish form** — bearer token + suite metadata fields + kind selector that swaps the form
    body (dataset upload for `cases`, generation-config fields for `redteam`). The request is
    **multipart**, not JSON: a `metadata` form field holding the JSON-encoded metadata string,
    plus a `dataset` file field for `cases` suites (newline-delimited JSON goldens:
    `{input, expected_output?, context?, expected_tools?, metadata}` per line) — same shape as
    Skill Registry's existing publish UI, confirmed against `publish_suite`'s actual
-   `Form(...)`/`UploadFile` signature, not assumed from the metadata schema alone.
+   `Form(...)`/`UploadFile` signature, not assumed from the metadata schema alone. On success,
+   the newly published suite's own card is found in the refreshed list and opened in place,
+   matching the same "expand where it actually is" interaction as a manual click.
 
 ## Agent Registry UI — `agent-registry`
 
