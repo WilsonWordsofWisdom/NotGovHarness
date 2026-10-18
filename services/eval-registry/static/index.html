@@ -358,6 +358,7 @@
       suite = await resp.json();
     } catch (err) {
       detailSlot.appendChild(el("div", { class: "empty", text: "Couldn't load suite: " + err.message }));
+      detailSlot.scrollIntoView({ behavior: "smooth", block: "start" });
       return;
     }
 
@@ -447,6 +448,7 @@
     }
 
     detailSlot.appendChild(box);
+    detailSlot.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
   // Parses the dataset file's goldens (one JSON object per non-blank line) and renders each as
