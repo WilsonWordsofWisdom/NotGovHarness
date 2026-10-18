@@ -1602,3 +1602,31 @@ visible rather than letting three "fix(ui)" commit messages stand alone with no 
 Each round was verified with a simulated DOM click (`jsdom`) against the real rebuilt-and-
 redeployed live container before being called done, including the exact card the user reported
 clicking.
+
+---
+
+## 2026-10-18 — Agent Registry UI: the manual-publish tab can't call identity-service directly
+
+**D-109 — D-100's planned "paste token → sign via identity-service → publish via
+agent-registry" flow for the Advanced tab doesn't work from a browser, because
+`platform_core.app`'s shared FastAPI factory configures no CORS middleware anywhere in this
+codebase.** Checked directly before building, not assumed: an `OPTIONS` preflight to
+`identity-service`'s `/cards/sign` from a different origin gets back `405 Method Not Allowed`
+with no `Access-Control-Allow-Origin` header at all — every real browser would block the actual
+`POST` before it's even sent. This is the same class of concern D-098 already raised for MCP
+Gateway Registry (don't bake a direct cross-service browser call into a `/ui` page) — the
+difference is D-098's UI never needed to, while this one's original design explicitly did.
+
+**Fix: the Advanced tab signs nothing itself.** It takes a bearer token, the raw card JSON, and
+the three already-obtained signature fields (`signing_algorithm`, `signing_key_id`,
+`signature_value`) as plain inputs, and calls only `agent-registry`'s own same-origin
+`POST /agents` — no cross-origin call at all. A `.help` block shows the exact `curl` command
+against `identity-service POST /cards/sign` to get those three values first, same convention
+Skill Registry's publish UI already uses for showing how to obtain a bearer token via `curl`
+before pasting it in. **Why not add a backend proxy endpoint instead** (e.g. a new
+`agent-registry` route that signs server-side, avoiding CORS entirely by never crossing origins
+in the browser): the Advanced tab is already secondary and de-emphasized by design (D-100 —
+"normally agents are published automatically by Agent Builder"), so adding new backend surface
+to make a rarely-used manual path one step shorter isn't worth the scope; the `curl`-then-paste
+shape already matches how every other credential-adjacent step in this platform's `/ui` pages
+works.

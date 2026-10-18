@@ -161,18 +161,35 @@ applies_to}`), already collapsed to the latest; a version only appears once a su
 ## Agent Registry UI — `agent-registry`
 
 Landing view: **Agents** (browse), not publish — publishing is normally done by Agent Builder.
+Browsing is fully public (`GET /agents`, `GET /agents/{name}[/{version}]`, and
+`GET /agents/{name}/{version}/verify` all have no `Depends(require_identity)` — only
+`POST /agents` needs `registry:publish`), same posture as Skill/Eval Registry.
 
-1. **Agents list** — grouped by name, each with its published versions (`GET /agents`).
-2. **Card detail** — full card rendered as labeled fields (name, url, version, capabilities) plus
-   a collapsible "raw JSON" block; a **Verify** button calls
-   `GET /agents/{name}/{version}/verify` and shows a clear valid/invalid result, including the
-   signing key id — this is the one action every card supports, so it's the primary CTA on the
-   page, not buried.
-3. **Manual publish (Advanced tab)** — secondary, visually de-emphasized tab: bearer token + raw
-   card JSON → calls `identity-service POST /cards/sign` then `agent-registry POST /agents` with
-   the returned signature, mirroring Skill Registry's publish flow. Labeled "normally agents are
-   published automatically by Agent Builder — use this only to publish a hand-authored card" so
-   it doesn't read as the main path (D-100).
+1. **Agents list** — `GET /agents` is a flat list of `{name, version, description, url, skills,
+   created_at}` rows, already sorted by name then version (confirmed live: 108 real rows, a
+   dozen names with 2 published versions each from Agent Builder's revise testing) — not grouped
+   server-side, but same-name rows sort adjacent, so the table reads as grouped without needing
+   client-side grouping logic.
+2. **Card detail — inline accordion, same pattern Eval Registry landed on (D-108), built that
+   way from the start here rather than repeating the same UX mistake.** Clicking a row expands
+   in place: capabilities, the real `extensions` array (when present, a build's CrewAI
+   role/goal/backstory/task lives here under `urn:notgovharness:crewai-agent-config` — confirmed
+   against a real revised build's card), signature info (algorithm + key id shown; the actual
+   JWT `signature_value` is long and not meaningful to read, so it's available in the raw-card
+   JSON block, not surfaced as its own field), and a **Verify** button
+   (`GET /agents/{name}/{version}/verify` → `{valid, reason}`) — the one action every card
+   supports, so it's the primary CTA, not buried.
+3. **Manual publish (Advanced tab)** — secondary, visually de-emphasized: bearer token + raw
+   card JSON + the three signature fields (`signing_algorithm`/`signing_key_id`/
+   `signature_value`), calling only `agent-registry`'s own `POST /agents`. **Does not call
+   `identity-service` from the browser at all (D-109)** — checked live before building: no CORS
+   is configured anywhere in this codebase's shared app factory, so a direct cross-origin
+   `POST /cards/sign` from this page would be silently blocked by every real browser. A `.help`
+   block shows the exact `curl` command against `identity-service POST /cards/sign` to get the
+   three signature values first, same convention Skill Registry's publish UI already uses for
+   obtaining a bearer token. Labeled "normally agents are published automatically by Agent
+   Builder — use this only to publish a hand-authored, already-signed card" so it doesn't read
+   as the main path (D-100).
 
 ## Identity Service UI — `identity-service`
 
