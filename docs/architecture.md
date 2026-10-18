@@ -31,6 +31,10 @@ was accurate at the time.
 (`feat/ui-mcp-gateway-registry`; D-096, D-106) — the second of the five. Three remain planned:
 Eval Registry, Agent Registry, Identity Service.
 
+**Status (updated 2026-10-18):** Eval Registry's `/ui` is built (`feat/ui-eval-registry`;
+D-037, D-107, D-108) — the third of the five. Two remain planned: Agent Registry, Identity
+Service.
+
 ## Platform map (harnesses + chosen anchors)
 
 ```mermaid
@@ -42,7 +46,7 @@ graph TB
         UI_EV["✅ Evals Runner UI"]
         UI_AB["✅ Agent Builder UI"]
         UI_MG["✅ MCP Gateway Registry UI"]
-        UI_ER["🧩 Eval Registry UI"]
+        UI_ER["✅ Eval Registry UI"]
         UI_AR["🧩 Agent Registry UI"]
         UI_ID["🧩 Identity Service UI"]
     end
@@ -112,7 +116,8 @@ graph TB
     class AB,EV,MG,GR,MEM,RAG,SBX,HITL,AR,SR,ER,ID,GW,OBS,AUD built;
     class DP planned;
     class UI_SR,UI_HITL,UI_EV,UI_AB,UI_MG built;
-    class UI_ER,UI_AR,UI_ID planned;
+    class UI_ER built;
+    class UI_AR,UI_ID planned;
 ```
 
 ## Engine map

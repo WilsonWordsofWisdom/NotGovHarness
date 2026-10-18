@@ -1,0 +1,639 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Eval Registry</title>
+<style>
+  :root {
+    --bg: #f7f7f5;
+    --surface: #ffffff;
+    --border: #e2e0da;
+    --text: #24231f;
+    --text-dim: #6b6a63;
+    --accent: #7a5cff;
+    --accent-ink: #ffffff;
+    --accent-bg: #f1eeff;
+    --danger: #b3261e;
+    --danger-bg: #fbebea;
+    --warn: #8a5a00;
+    --warn-bg: #fdf3dc;
+    --ok: #146c2e;
+    --ok-bg: #e8f6ec;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #17161c;
+      --surface: #201f27;
+      --border: #34323d;
+      --text: #ece9f7;
+      --text-dim: #a29fb3;
+      --accent: #a48bff;
+      --accent-ink: #17161c;
+      --accent-bg: #241f3d;
+      --danger: #ff8f87;
+      --danger-bg: #3a201f;
+      --warn: #f0c26b;
+      --warn-bg: #3a2f14;
+      --ok: #7fd99a;
+      --ok-bg: #16301f;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #17161c;
+    --surface: #201f27;
+    --border: #34323d;
+    --text: #ece9f7;
+    --text-dim: #a29fb3;
+    --accent: #a48bff;
+    --accent-ink: #17161c;
+    --accent-bg: #241f3d;
+    --danger: #ff8f87;
+    --danger-bg: #3a201f;
+    --warn: #f0c26b;
+    --warn-bg: #3a2f14;
+    --ok: #7fd99a;
+    --ok-bg: #16301f;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    line-height: 1.5;
+  }
+  .wrap { max-width: 1040px; margin: 0 auto; padding: 2rem 1.5rem 4rem; }
+  header { margin-bottom: 1.5rem; }
+  header h1 { font-size: 1.5rem; margin: 0 0 0.25rem; letter-spacing: -0.01em; }
+  header p { margin: 0; color: var(--text-dim); font-size: 0.95rem; }
+
+  nav { display: flex; gap: 0.5rem; border-bottom: 1px solid var(--border); margin-bottom: 1.5rem; }
+  nav button {
+    background: none; border: none; cursor: pointer;
+    padding: 0.6rem 0.9rem; font-size: 0.9rem; color: var(--text-dim);
+    border-bottom: 2px solid transparent; margin-bottom: -1px;
+    font-family: inherit;
+  }
+  nav button.active { color: var(--text); border-bottom-color: var(--accent); font-weight: 600; }
+
+  .panel { display: none; }
+  .panel.active { display: block; }
+
+  input[type="text"], input[type="password"], input[type="search"], input[type="file"] {
+    width: 100%; padding: 0.55rem 0.7rem; border-radius: 8px;
+    border: 1px solid var(--border); background: var(--surface); color: var(--text);
+    font-family: inherit; font-size: 0.9rem;
+  }
+  textarea {
+    width: 100%; padding: 0.55rem 0.7rem; border-radius: 8px;
+    border: 1px solid var(--border); background: var(--surface); color: var(--text);
+    font-family: var(--mono); font-size: 0.85rem; resize: vertical; min-height: 6rem;
+  }
+  label { display: block; font-size: 0.82rem; color: var(--text-dim); margin: 0.9rem 0 0.3rem; }
+  label:first-child { margin-top: 0; }
+  select {
+    width: 100%; padding: 0.55rem 0.7rem; border-radius: 8px;
+    border: 1px solid var(--border); background: var(--surface); color: var(--text);
+    font-family: inherit; font-size: 0.9rem;
+  }
+
+  button.primary {
+    background: var(--accent); color: var(--accent-ink); border: none;
+    border-radius: 8px; padding: 0.6rem 1.1rem; font-size: 0.9rem; font-weight: 600;
+    cursor: pointer; font-family: inherit; margin-top: 1.1rem;
+  }
+  button.primary:disabled { opacity: 0.55; cursor: default; }
+  button.ghost {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+    padding: 0.5rem 0.8rem; cursor: pointer; font-family: inherit; color: var(--text);
+    font-size: 0.85rem;
+  }
+
+  .card-wrap { margin-bottom: 0.6rem; }
+  .card-detail { display: none; }
+  .card-detail.open { display: block; }
+
+  .card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+    padding: 0.9rem 1rem; cursor: pointer;
+  }
+  .card:hover { border-color: var(--accent); }
+  .card.active { background: var(--accent-bg); border-color: var(--accent); border-radius: 10px 10px 0 0; }
+  .card-detail.open .detail { border-radius: 0 0 10px 10px; border-top: none; border-color: var(--accent); margin-top: 0; }
+  .card h3 { margin: 0; font-size: 0.98rem; font-family: var(--mono); }
+  .card p { margin: 0.25rem 0 0; color: var(--text-dim); font-size: 0.86rem; }
+  .card .tags { margin-top: 0.4rem; }
+
+  .chip {
+    display: inline-flex; background: var(--bg); border: 1px solid var(--border); border-radius: 12px;
+    padding: 0.15rem 0.55rem; font-size: 0.76rem; font-family: var(--mono); margin: 0.1rem 0.25rem 0 0;
+  }
+  .badge {
+    display: inline-flex; border-radius: 10px; padding: 0.1rem 0.5rem; font-size: 0.76rem; font-weight: 600;
+    background: var(--ok-bg); color: var(--ok);
+  }
+  .badge.redteam { background: var(--warn-bg); color: var(--warn); }
+
+  .empty { color: var(--text-dim); font-size: 0.9rem; padding: 1.5rem 0; text-align: center; }
+
+  .case-list { border: 1px solid var(--border); border-radius: 8px; margin-top: 0.6rem; overflow: hidden; }
+  .case-row { border-bottom: 1px solid var(--border); }
+  .case-row:last-child { border-bottom: none; }
+  .case-summary {
+    display: flex; justify-content: space-between; align-items: baseline; gap: 0.6rem;
+    padding: 0.55rem 0.7rem; cursor: pointer; font-size: 0.85rem;
+  }
+  .case-summary:hover { background: var(--bg); }
+  .case-summary .input-text { font-family: var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .case-summary .chevron { color: var(--text-dim); flex-shrink: 0; }
+  .case-body { display: none; padding: 0 0.7rem 0.7rem; }
+  .case-row.expanded .case-body { display: block; }
+
+  .detail {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+    padding: 1.1rem 1.2rem; margin-top: 1rem;
+  }
+  .detail h2 { margin: 0 0 0.2rem; font-size: 1.15rem; font-family: var(--mono); }
+  .detail .meta { color: var(--text-dim); font-size: 0.82rem; margin-bottom: 0.8rem; }
+  .field-row { display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.8rem; }
+  .field-row input { flex: 1; }
+  .field-row button {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+    padding: 0.5rem 0.8rem; cursor: pointer; font-family: inherit; color: var(--text);
+    font-size: 0.85rem;
+  }
+  .field-label { font-size: 0.74rem; font-weight: 600; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.03em; margin-bottom: 0.2rem; }
+  .field { margin-bottom: 0.9rem; }
+
+  pre.block {
+    background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+    padding: 0.9rem; overflow-x: auto; font-family: var(--mono); font-size: 0.8rem;
+    white-space: pre-wrap; word-break: break-word; max-height: 18rem; overflow-y: auto; margin: 0;
+  }
+
+  .findings { margin-top: 0.3rem; }
+  .finding {
+    display: flex; gap: 0.5rem; padding: 0.5rem 0.7rem; border-radius: 8px;
+    font-size: 0.82rem; margin-bottom: 0.4rem; align-items: baseline;
+    background: var(--warn-bg); color: var(--warn);
+  }
+  .finding .label { font-weight: 600; }
+
+  .help {
+    background: var(--surface); border: 1px dashed var(--border); border-radius: 8px;
+    padding: 0.8rem 1rem; font-size: 0.82rem; color: var(--text-dim); margin-bottom: 1.2rem;
+  }
+
+  .download-link {
+    display: inline-block; margin-top: 0.3rem; font-size: 0.85rem;
+    color: var(--accent); text-decoration: none; font-weight: 600;
+  }
+
+  .result {
+    margin-top: 1.1rem; padding: 0.8rem 1rem; border-radius: 8px; font-size: 0.86rem;
+  }
+  .result.ok { background: var(--ok-bg); color: var(--ok); }
+  .result.err { background: var(--danger-bg); color: var(--danger); font-family: var(--mono); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Eval Registry</h1>
+    <p>Browse published eval suites, or publish one of your own.</p>
+  </header>
+
+  <nav>
+    <button id="tab-browse" class="active">Browse</button>
+    <button id="tab-publish">Publish</button>
+  </nav>
+
+  <section id="panel-browse" class="panel active">
+    <input type="search" id="search" placeholder="Search by name or description…" />
+    <div id="list" style="margin-top: 1rem;"></div>
+  </section>
+
+  <section id="panel-publish" class="panel">
+    <div class="help">
+      This form needs a bearer token already scoped for <code>eval_registry:publish</code> --
+      never a client id/secret. Browsing suites needs no token at all; only publishing does.
+    </div>
+
+    <form id="publish-form">
+      <label for="token">Bearer token</label>
+      <input type="password" id="token" autocomplete="off" required />
+
+      <label for="name">Name</label>
+      <input type="text" id="name" required />
+
+      <label for="version">Version</label>
+      <input type="text" id="version" placeholder="1.0.0" required />
+
+      <label for="description">Description</label>
+      <input type="text" id="description" required />
+
+      <label for="applies-to">Applies to (comma-separated)</label>
+      <input type="text" id="applies-to" placeholder="customer-faq-agent" />
+
+      <label for="kind">Kind</label>
+      <select id="kind">
+        <option value="cases" selected>cases</option>
+        <option value="redteam">redteam</option>
+      </select>
+
+      <div id="cases-fields">
+        <label for="metrics">Metrics (JSON array of {engine, metric_id, params})</label>
+        <textarea id="metrics">[{"engine": "deepeval", "metric_id": "g_eval", "params": {"name": "Correctness", "criteria": "...", "threshold": 0.5}}]</textarea>
+
+        <label for="dataset">Dataset (.jsonl, one golden per line)</label>
+        <input type="file" id="dataset" accept=".jsonl,.ndjson" />
+      </div>
+
+      <div id="redteam-fields" style="display: none;">
+        <label for="redteam-config">Redteam config (JSON object, "purpose" required)</label>
+        <textarea id="redteam-config">{"purpose": "Attempt to get the agent to ignore its system instructions."}</textarea>
+      </div>
+
+      <button type="submit" class="primary">Publish</button>
+    </form>
+    <div id="publish-result"></div>
+  </section>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  function el(tag, opts) {
+    const node = document.createElement(tag);
+    if (opts) {
+      if (opts.text !== undefined) node.textContent = opts.text;
+      if (opts.class) node.className = opts.class;
+      if (opts.attrs) for (const k in opts.attrs) node.setAttribute(k, opts.attrs[k]);
+    }
+    return node;
+  }
+
+  function clear(node) {
+    while (node.firstChild) node.removeChild(node.firstChild);
+  }
+
+  async function errorMessage(resp) {
+    try {
+      const data = await resp.json();
+      if (data && data.error) return data.error.code + ": " + data.error.message;
+    } catch (_err) { /* fall through */ }
+    return "request failed: " + resp.status;
+  }
+
+  // ---- tabs ----
+  const tabBrowse = document.getElementById("tab-browse");
+  const tabPublish = document.getElementById("tab-publish");
+  const panelBrowse = document.getElementById("panel-browse");
+  const panelPublish = document.getElementById("panel-publish");
+
+  function showTab(name) {
+    const browsing = name === "browse";
+    tabBrowse.classList.toggle("active", browsing);
+    tabPublish.classList.toggle("active", !browsing);
+    panelBrowse.classList.toggle("active", browsing);
+    panelPublish.classList.toggle("active", !browsing);
+  }
+  tabBrowse.addEventListener("click", () => showTab("browse"));
+  tabPublish.addEventListener("click", () => showTab("publish"));
+
+  // ---- browse (fully public -- no bearer token on any GET route here) ----
+  const listEl = document.getElementById("list");
+  const searchEl = document.getElementById("search");
+
+  async function loadList(q) {
+    clear(listEl);
+    let rows;
+    try {
+      const resp = await fetch("/suites");
+      if (!resp.ok) throw new Error(await errorMessage(resp));
+      rows = await resp.json();
+    } catch (err) {
+      listEl.appendChild(el("div", { class: "empty", text: "Couldn't load suites: " + err.message }));
+      return;
+    }
+    const needle = (q || "").trim().toLowerCase();
+    const filtered = needle
+      ? rows.filter((r) => r.name.toLowerCase().includes(needle) || r.description.toLowerCase().includes(needle))
+      : rows;
+    if (filtered.length === 0) {
+      listEl.appendChild(el("div", { class: "empty", text: rows.length === 0 ? "No suites published yet." : "No suites match." }));
+      return;
+    }
+    for (const row of filtered) {
+      const wrap = el("div", { class: "card-wrap" });
+      const card = el("div", { class: "card" });
+      const titleRow = el("div", { attrs: { style: "display:flex; justify-content:space-between; align-items:baseline; gap:0.6rem;" } });
+      const titleLeft = el("div", { attrs: { style: "display:flex; align-items:baseline; gap:0.4rem;" } });
+      const chevron = el("span", { class: "chevron", text: "▸" });
+      titleLeft.appendChild(chevron);
+      titleLeft.appendChild(el("h3", { text: row.name }));
+      titleRow.appendChild(titleLeft);
+      titleRow.appendChild(el("span", { class: "badge" + (row.kind === "redteam" ? " redteam" : ""), text: row.kind }));
+      card.appendChild(titleRow);
+      card.appendChild(el("p", { text: row.description }));
+      if (row.applies_to && row.applies_to.length > 0) {
+        const tags = el("div", { class: "tags" });
+        for (const t of row.applies_to) tags.appendChild(el("span", { class: "chip", text: t }));
+        card.appendChild(tags);
+      }
+      const detailBox = el("div", { class: "card-detail" });
+      card.addEventListener("click", () => {
+        const isOpen = detailBox.classList.toggle("open");
+        card.classList.toggle("active", isOpen);
+        chevron.textContent = isOpen ? "▾" : "▸";
+        if (isOpen) {
+          renderDetail(detailBox, row.name);
+        } else {
+          clear(detailBox);
+        }
+      });
+      wrap.appendChild(card);
+      wrap.appendChild(detailBox);
+      listEl.appendChild(wrap);
+    }
+  }
+
+  function findingRow(f) {
+    const row = el("div", { class: "finding" });
+    row.appendChild(el("span", { class: "label", text: f.label + ":" }));
+    row.appendChild(el("span", { text: " " + f.detail + " (" + f.rule + ")" }));
+    return row;
+  }
+
+  // Renders a suite's detail INLINE into `container` -- a sibling of the card that was clicked,
+  // not a separate panel elsewhere on the page. Reported real UX bug: the previous design put
+  // the detail panel after the whole (50-suite) list, so clicking an early card updated content
+  // far off-screen below -- scrolling to it was a patch; expanding in place, where the click
+  // happened, is the actual fix.
+  async function renderDetail(container, name, version) {
+    clear(container);
+    let suite;
+    try {
+      const path = version
+        ? "/suites/" + encodeURIComponent(name) + "/" + encodeURIComponent(version)
+        : "/suites/" + encodeURIComponent(name);
+      const resp = await fetch(path);
+      if (!resp.ok) throw new Error(await errorMessage(resp));
+      suite = await resp.json();
+    } catch (err) {
+      container.appendChild(el("div", { class: "empty", text: "Couldn't load suite: " + err.message }));
+      return;
+    }
+
+    const box = el("div", { class: "detail" });
+    const titleRow = el("div", { attrs: { style: "display:flex; justify-content:space-between; align-items:baseline;" } });
+    titleRow.appendChild(el("h2", { text: suite.name }));
+    titleRow.appendChild(el("span", { class: "badge" + (suite.kind === "redteam" ? " redteam" : ""), text: suite.kind }));
+    box.appendChild(titleRow);
+
+    const meta = el("div", { class: "meta" });
+    meta.appendChild(el("span", { text: "version " + suite.version }));
+    box.appendChild(meta);
+
+    const fieldRow = el("div", { class: "field-row" });
+    const versionInput = el("input", { attrs: { type: "text", placeholder: "version (blank = latest)" } });
+    versionInput.value = suite.version;
+    const goBtn = el("button", { text: "Load version" });
+    goBtn.addEventListener("click", () => renderDetail(container, name, versionInput.value.trim() || undefined));
+    fieldRow.appendChild(versionInput);
+    fieldRow.appendChild(goBtn);
+    box.appendChild(fieldRow);
+
+    const descField = el("div", { class: "field" });
+    descField.appendChild(el("div", { class: "field-label", text: "Description" }));
+    descField.appendChild(el("div", { text: suite.description }));
+    box.appendChild(descField);
+
+    if (suite.applies_to && suite.applies_to.length > 0) {
+      const appliesField = el("div", { class: "field" });
+      appliesField.appendChild(el("div", { class: "field-label", text: "Applies to" }));
+      const tags = el("div");
+      for (const t of suite.applies_to) tags.appendChild(el("span", { class: "chip", text: t }));
+      appliesField.appendChild(tags);
+      box.appendChild(appliesField);
+    }
+
+    if (suite.kind === "cases") {
+      const metricsField = el("div", { class: "field" });
+      metricsField.appendChild(el("div", { class: "field-label", text: "Metrics" }));
+      const chips = el("div");
+      for (const m of suite.metrics || []) {
+        chips.appendChild(el("span", { class: "chip", text: m.engine }));
+        chips.appendChild(el("span", { class: "chip", text: m.metric_id }));
+      }
+      metricsField.appendChild(chips);
+      metricsField.appendChild(el("pre", { class: "block", text: JSON.stringify(suite.metrics, null, 2), attrs: { style: "margin-top: 0.5rem;" } }));
+      box.appendChild(metricsField);
+
+      const caseField = el("div", { class: "field" });
+      caseField.appendChild(el("div", { class: "field-label", text: "Dataset" }));
+      caseField.appendChild(el("div", { text: (suite.case_count !== null ? suite.case_count : "—") + " case(s) -- click one below to expand it" }));
+      const dl = el("a", {
+        text: "Download dataset (" + suite.name + "-" + suite.version + ".jsonl)",
+        class: "download-link",
+        attrs: {
+          href: "/suites/" + encodeURIComponent(suite.name) + "/" + encodeURIComponent(suite.version) + "/dataset",
+        },
+      });
+      caseField.appendChild(dl);
+      const caseListEl = el("div", { class: "case-list" });
+      caseField.appendChild(caseListEl);
+      box.appendChild(caseField);
+      if (suite.case_count) loadCases(suite.name, suite.version, caseListEl);
+    } else {
+      const redteamField = el("div", { class: "field" });
+      redteamField.appendChild(el("div", { class: "field-label", text: "Redteam config" }));
+      const cfg = suite.redteam_config || {};
+      if (cfg.purpose) {
+        redteamField.appendChild(el("div", { text: cfg.purpose, attrs: { style: "margin-bottom: 0.5rem;" } }));
+      }
+      redteamField.appendChild(el("pre", { class: "block", text: JSON.stringify(cfg, null, 2) }));
+      box.appendChild(redteamField);
+      box.appendChild(el("div", {
+        class: "hint",
+        text: "No dataset here -- a redteam suite generates adversarial inputs at run time, there's nothing stored to download.",
+        attrs: { style: "font-size: 0.78rem; color: var(--text-dim); margin-top: 0.3rem;" },
+      }));
+    }
+
+    if (suite.scan_findings && suite.scan_findings.length > 0) {
+      const findingsField = el("div", { class: "field" });
+      findingsField.appendChild(el("div", { class: "field-label", text: "Scan warnings" }));
+      const findings = el("div", { class: "findings" });
+      for (const f of suite.scan_findings) findings.appendChild(findingRow(f));
+      findingsField.appendChild(findings);
+      box.appendChild(findingsField);
+    }
+
+    container.appendChild(box);
+  }
+
+  // Parses the dataset file's goldens (one JSON object per non-blank line) and renders each as
+  // a collapsible row -- the detail view previously only showed a bare case count plus a raw
+  // file download link, with nothing in the page actually clickable, which is exactly the
+  // reported "can't expand into a case" gap. GET /suites/{name}/{version}/dataset is already
+  // public, so this needs no new backend route.
+  async function loadCases(name, version, container) {
+    clear(container);
+    container.appendChild(el("div", { class: "empty", text: "Loading cases…" }));
+    let goldens;
+    try {
+      const resp = await fetch(
+        "/suites/" + encodeURIComponent(name) + "/" + encodeURIComponent(version) + "/dataset"
+      );
+      if (!resp.ok) throw new Error(await errorMessage(resp));
+      const text = await resp.text();
+      goldens = text
+        .split("\n")
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0)
+        .map((line) => JSON.parse(line));
+    } catch (err) {
+      clear(container);
+      container.appendChild(el("div", { class: "empty", text: "Couldn't load cases: " + err.message }));
+      return;
+    }
+
+    clear(container);
+    goldens.forEach((golden, index) => {
+      const row = el("div", { class: "case-row" });
+      const summary = el("div", { class: "case-summary" });
+      summary.appendChild(el("span", { class: "input-text", text: "#" + (index + 1) + "  " + golden.input }));
+      const chevron = el("span", { class: "chevron", text: "▸" });
+      summary.appendChild(chevron);
+      summary.addEventListener("click", () => {
+        const expanded = row.classList.toggle("expanded");
+        chevron.textContent = expanded ? "▾" : "▸";
+      });
+      row.appendChild(summary);
+
+      const bodyEl = el("div", { class: "case-body" });
+      bodyEl.appendChild(el("pre", { class: "block", text: JSON.stringify(golden, null, 2) }));
+      row.appendChild(bodyEl);
+
+      container.appendChild(row);
+    });
+  }
+
+  let searchTimer;
+  searchEl.addEventListener("input", () => {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => loadList(searchEl.value.trim()), 250);
+  });
+
+  // ---- publish ----
+  const kindSelect = document.getElementById("kind");
+  const casesFields = document.getElementById("cases-fields");
+  const redteamFields = document.getElementById("redteam-fields");
+  kindSelect.addEventListener("change", () => {
+    const isCases = kindSelect.value === "cases";
+    casesFields.style.display = isCases ? "block" : "none";
+    redteamFields.style.display = isCases ? "none" : "block";
+  });
+
+  const form = document.getElementById("publish-form");
+  const resultEl = document.getElementById("publish-result");
+
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    clear(resultEl);
+
+    const token = document.getElementById("token").value.trim();
+    const kind = kindSelect.value;
+    const appliesTo = document
+      .getElementById("applies-to")
+      .value.split(",")
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
+
+    const metadata = {
+      name: document.getElementById("name").value.trim(),
+      version: document.getElementById("version").value.trim(),
+      description: document.getElementById("description").value.trim(),
+      kind: kind,
+      applies_to: appliesTo,
+    };
+
+    if (kind === "cases") {
+      try {
+        metadata.metrics = JSON.parse(document.getElementById("metrics").value || "[]");
+      } catch (_err) {
+        resultEl.appendChild(el("div", { class: "result err", text: "Metrics must be valid JSON." }));
+        return;
+      }
+    } else {
+      try {
+        metadata.redteam_config = JSON.parse(document.getElementById("redteam-config").value || "{}");
+      } catch (_err) {
+        resultEl.appendChild(el("div", { class: "result err", text: "Redteam config must be valid JSON." }));
+        return;
+      }
+    }
+
+    const body = new FormData();
+    body.append("metadata", JSON.stringify(metadata));
+    const datasetInput = document.getElementById("dataset");
+    if (kind === "cases" && datasetInput.files[0]) {
+      body.append("dataset", datasetInput.files[0]);
+    }
+
+    const submitBtn = form.querySelector("button[type=submit]");
+    submitBtn.disabled = true;
+    try {
+      const resp = await fetch("/suites", {
+        method: "POST",
+        headers: { Authorization: "Bearer " + token },
+        body: body,
+      });
+      const data = await resp.json();
+      if (!resp.ok) {
+        const message = (data && data.error && data.error.message) || "publish failed";
+        resultEl.appendChild(el("div", { class: "result err", text: message }));
+      } else {
+        const box = el("div", { class: "result ok" });
+        box.appendChild(el("div", { text: "Published " + data.name + " " + data.version + "." }));
+        if (data.scan_warnings && data.scan_warnings.length > 0) {
+          for (const w of data.scan_warnings) {
+            box.appendChild(el("div", {
+              text: w.label + ": " + w.detail + " (" + w.rule + ")",
+              attrs: { style: "margin-top: 0.3rem; font-family: " + "var(--mono)" + "; font-size: 0.82rem;" },
+            }));
+          }
+        }
+        resultEl.appendChild(box);
+        form.reset();
+        kindSelect.dispatchEvent(new Event("change"));
+        showTab("browse");
+        searchEl.value = "";
+        await loadList("");
+        // Find the just-published suite's own card and open it in place, same as a real click
+        // would -- there's no separate detail panel to target anymore.
+        const cards = [...listEl.querySelectorAll(".card")];
+        const newCard = cards.find((c) => c.querySelector("h3") && c.querySelector("h3").textContent === data.name);
+        if (newCard) {
+          newCard.click();
+          newCard.scrollIntoView({ behavior: "smooth", block: "center" });
+        }
+      }
+    } catch (err) {
+      resultEl.appendChild(el("div", { class: "result err", text: "Network error: " + err.message }));
+    } finally {
+      submitBtn.disabled = false;
+    }
+  });
+
+  loadList("");
+})();
+</script>
+</body>
+</html>

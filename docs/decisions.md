@@ -1558,3 +1558,47 @@ read-only reference) rather than the vague "status chip" the first pass guessed 
 behavioral finding worth building around: `POST /tools/{name}/call` can return HTTP 200 with a
 JSON-RPC-level `error` key and no `result` key when the tool call itself fails — a naive
 "HTTP ok == success" check would silently show a failed call as if it succeeded.
+
+---
+
+## 2026-10-18 — Eval Registry UI design pass, corrected against the live service
+
+**D-107 — The original Eval Registry UI design assumed `GET /suites` returns a version per row
+and that browsing needs a bearer token; neither is true.** Checked against `main.py` and the
+real running service (47 published suites) before writing the page: `list_suites` dedupes to
+one row per name (`{name, description, kind, applies_to}`) with no version field at all — a
+version only exists once a specific suite is opened via `GET /suites/{name}` or
+`/{name}/{version}`. And every `GET` route here has no `Depends(require_identity)` at all —
+browsing is fully public, same posture as Skill Registry, unlike Agent Builder/MCP Gateway
+Registry where every route (reads included) needs a token; only `POST /suites` does. Also found
+live: every one of the 47 real published suites is `kind="cases"` — nothing in this platform has
+ever published a `redteam` suite, so the redteam detail layout is designed from the schema
+(`D-040`) and `KNOWN_KINDS`/`redteam_config.purpose`'s validation rules, not from a real example,
+and is flagged as such in `design.md` rather than presented as equally verified.
+
+---
+
+## 2026-10-18 — Eval Registry UI: three real UX bugs found live by the user, in sequence
+
+**D-108 — Suite detail moved from a single page-level panel, to a scroll-to-it panel, to a true
+inline accordion per card — three iterations, each a genuine fix to a real reported problem, not
+polish for its own sake.** (1) The first shipped version put the suite detail into one
+`#detail-slot` after the entire suite list; functionally correct (confirmed by simulated DOM
+clicks before ever shipping it) but invisible in practice — with 47+ real suites, clicking an
+early card updated content rendered far off-screen below, which reads as "nothing happened."
+Reported live by the user clicking the exact first card in the list. (2) First fix tried:
+`scrollIntoView()` on the shared panel. Technically correct, but the user immediately pushed
+back — jumping the whole page to a shared panel at the bottom is itself bad interaction, not
+just an under-signposted one. (3) Real fix: removed the shared panel entirely; each suite card
+now owns its own sibling `.card-detail` container and toggles it open/closed in place
+(accordion), with an `active` class (new `--accent-bg` token, same light/dark convention as the
+existing `--ok-bg`/`--warn-bg`/`--danger-bg` pairs) so the open card is visually unambiguous —
+a fourth real request, after the interaction itself was already fixed, because color alone
+wasn't enough to tell which of several cards was expanded. **Why record three small UI commits
+as one decision:** each was a genuine, reported defect with a real root cause (not three rounds
+of taste), and the pattern — ship, get real usage feedback, find the interaction is actually
+wrong rather than just unclear, fix the mechanism and not just add a hint — is worth keeping
+visible rather than letting three "fix(ui)" commit messages stand alone with no throughline.
+Each round was verified with a simulated DOM click (`jsdom`) against the real rebuilt-and-
+redeployed live container before being called done, including the exact card the user reported
+clicking.
