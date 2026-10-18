@@ -13,6 +13,7 @@
     --text-dim: #6b6a63;
     --accent: #7a5cff;
     --accent-ink: #ffffff;
+    --accent-bg: #f1eeff;
     --danger: #b3261e;
     --danger-bg: #fbebea;
     --warn: #8a5a00;
@@ -31,6 +32,7 @@
       --text-dim: #a29fb3;
       --accent: #a48bff;
       --accent-ink: #17161c;
+      --accent-bg: #241f3d;
       --danger: #ff8f87;
       --danger-bg: #3a201f;
       --warn: #f0c26b;
@@ -47,6 +49,7 @@
     --text-dim: #a29fb3;
     --accent: #a48bff;
     --accent-ink: #17161c;
+    --accent-bg: #241f3d;
     --danger: #ff8f87;
     --danger-bg: #3a201f;
     --warn: #f0c26b;
@@ -119,6 +122,8 @@
     padding: 0.9rem 1rem; cursor: pointer;
   }
   .card:hover { border-color: var(--accent); }
+  .card.active { background: var(--accent-bg); border-color: var(--accent); border-radius: 10px 10px 0 0; }
+  .card-detail.open .detail { border-radius: 0 0 10px 10px; border-top: none; border-color: var(--accent); margin-top: 0; }
   .card h3 { margin: 0; font-size: 0.98rem; font-family: var(--mono); }
   .card p { margin: 0.25rem 0 0; color: var(--text-dim); font-size: 0.86rem; }
   .card .tags { margin-top: 0.4rem; }
@@ -344,6 +349,7 @@
       const detailBox = el("div", { class: "card-detail" });
       card.addEventListener("click", () => {
         const isOpen = detailBox.classList.toggle("open");
+        card.classList.toggle("active", isOpen);
         chevron.textContent = isOpen ? "▾" : "▸";
         if (isOpen) {
           renderDetail(detailBox, row.name);
