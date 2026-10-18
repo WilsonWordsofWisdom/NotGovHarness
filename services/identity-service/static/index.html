@@ -151,14 +151,17 @@
   </header>
 
   <div class="banner">
-    <strong>No bearer token on this page, anywhere -- and that's not a design choice, it's a real gap.</strong>
+    <strong>No bearer token on this page, anywhere -- and that's not a design choice, it's a real gap (D-110).</strong>
     Unlike every other /ui page in this platform, nothing here is behind a scope check: browsing
     clients and <strong>registering a brand new one</strong> both need zero authentication in the
     current backend. Confirmed live, not assumed -- a caller with no Authorization header at all
     can self-grant any <code>allowed_scopes</code> string it likes to a client it creates.
-    This is a genuine backend security gap on this reference platform (not fixed here --
-    it's a trust-model decision, not a UI change). Treat this page as read-only-in-spirit even
-    though the write actually works.
+    <strong style="display: block; margin-top: 0.6rem;">The SPIFFE ID field has the same problem (D-111).</strong>
+    Nothing checks it for uniqueness either -- two different clients can register with the
+    identical <code>spiffe_id</code>, confirmed live, which defeats the whole point of a SPIFFE
+    ID as a workload's unique identity. Neither gap is fixed here -- both are trust-model
+    decisions, not UI changes. Treat this page as read-only-in-spirit even though the writes
+    actually work.
   </div>
 
   <nav>

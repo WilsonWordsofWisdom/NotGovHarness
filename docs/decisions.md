@@ -1677,3 +1677,28 @@ still recognize the key," not "is the key in identity-service's live JWKS right 
 different things that happen to usually agree, except right after one service restarts without
 the other. `design.md`'s identity-service section states this more precisely than the PR
 description did.
+
+---
+
+## 2026-10-18 — `spiffe_id` has no uniqueness check either, confirmed live
+
+**D-111 — Nothing stops two different clients from registering with the identical
+`spiffe_id`, the same class of gap as D-110's unauthenticated registration, found while
+answering a direct question rather than while building.** `Client.spiffe_id` is a plain
+nullable `String(300)` column (migration `0001_clients.py`) with no unique index or constraint
+anywhere; `register_client` only checks `client_id` uniqueness (it's the primary key) before
+inserting — `spiffe_id` is never compared against existing rows at all. Confirmed live, not
+just read in code: registered two distinct clients, `spiffe-collision-test-a` and
+`spiffe-collision-test-b`, both with `spiffe_id: "spiffe://notgovharness.local/shared-id"`; both
+succeeded. **Why this is worse than it sounds for a platform whose Foundation layer is built
+around SPIFFE/OAuth2 (D-010):** a SPIFFE ID is supposed to be a workload's unique cryptographic
+identity — the entire trust model assumes `spiffe_id -> exactly one workload`. Letting two
+different `client_id`s share one silently breaks that assumption for anything downstream that
+keys off `spiffe_id` rather than `client_id` (nothing currently does, since SPIRE-issued SVID
+verification is still the deferred "step 5" every seed migration's `spiffe_id: None` comment
+refers to — but the column and the gap are real today, not hypothetical). Surfaced in the
+Identity Service UI's existing warning banner (D-110) rather than a second, separate one, since
+both are the same shape of problem (this endpoint doesn't check the one thing it most needs to)
+and belong together for an operator reading the page. Not fixed here, same reasoning as D-110 —
+it's a trust-model decision (reject on collision? first-registration-wins? allow many `client_id`s
+per real workload on purpose?), not a quick patch to bundle into a `/ui` branch.

@@ -207,7 +207,9 @@ documented tradeoff, and the UI doesn't paper over it with a fake auth field.
    `allowed_scopes` input, and an optional `spiffe_id`. Calls `POST /clients`. Carries a visible,
    unmissable warning that this call needs no authorization at all in this deployment (D-110) —
    the earlier design-pass mockup had speculatively added an "admin bearer token" field before
-   this was checked against the real backend; removed, since no such gate exists to model.
+   this was checked against the real backend; removed, since no such gate exists to model. The
+   same banner also covers D-111: the `spiffe_id` field isn't checked for uniqueness either —
+   two clients can register with the identical SPIFFE ID, confirmed live.
 3. **Signing keys** — read-only view of `GET /.well-known/jwks.json` (key id, algorithm, use),
    so an operator can confirm which key is currently active without needing a token-minting flow
    to find out.
@@ -217,3 +219,43 @@ receive a bearer token). `POST /oauth/token` needs exactly the client-secret-in-
 pattern D-037 already rejected for every other registry; adding it to the one service that
 actually owns these secrets would be the same anti-pattern with higher stakes (D-099). Operators
 mint tokens via curl/httpx, as every other flow in this platform already does.
+
+## Scope reference
+
+No single place in this codebase documents every OAuth2 scope string and what it gates — each
+one only exists implicitly, in whichever service's `main.py` calls `require_scope(...)` and the
+`identity-service` migration that originally granted it to a client. Compiled here by grepping
+every `require_scope(require_identity, "...")` call and every scope string ever granted across
+`services/identity-service/migrations/versions/*.py`, not from memory. 18 distinct strings are
+actually used; one more (`agent_gateway:call`) exists only as history, superseded by
+`mcp_gateway_registry:call` when the harness was renamed (D-105) — migration `0018` moved every
+client that held it onto the new name, so nothing live checks for the old one anymore, but the
+string still appears in migrations `0006`–`0017`, which are left untouched as a historical
+record (same reasoning as D-105's own "don't rewrite applied migrations").
+
+| Scope | Enforced by | What it gates |
+|---|---|---|
+| `agentcard:sign` | `identity-service` | `POST /cards/sign` — sign an Agent Card |
+| `registry:publish` | `agent-registry` | `POST /agents` — publish a signed Agent Card |
+| `skill_registry:publish` | `skill-registry` | `POST /skills` — publish a skill bundle |
+| `eval_registry:publish` | `eval-registry` | `POST /suites` — publish an eval suite |
+| `mcp_gateway_registry:call` | `mcp-gateway-registry` | register/list MCP servers, list/call federated tools |
+| `llm_gateway:call` | `llm-gateway` | make an LLM completion call |
+| `builder:build` | `agent-builder-service` | `POST /builds`, `POST /builds/{name}/revise` |
+| `agent_runtime:invoke` | `agent-runtime` | invoke a deployed agent |
+| `deploy:create` | `deployment-pipeline-service` | create a new deployment |
+| `evals:run` | `evals-runner-service` | run an eval suite against a target |
+| `approvals:request` | `approvals-service` | request a new HITL approval |
+| `approvals:decide` | `approvals-service` | approve/reject a pending approval request |
+| `guardrails:check` | `guardrails-service` | run an input/output guardrails check |
+| `knowledge:write` | `knowledge-service` | ingest a document into the knowledge base |
+| `memory:write` | `mem0-service` | write to an agent's memory |
+| `sandbox:execute` | `sandbox-service` | execute code in the sandbox |
+| `upstream:call` | `upstream-stub` | Phase 0's generic façade-demo scope |
+| `agent_gateway:call` | *(none — historical only)* | predecessor of `mcp_gateway_registry:call`; renamed D-105, migration `0018` moved every holder off it |
+
+**Not shown on the Identity Service UI itself** (D-099's non-goal still holds): the chips on the
+Clients list render whatever `allowed_scopes` string a client actually has, but this table isn't
+reproduced as inline tooltips there — that would be a reasonable follow-up if an operator keeps
+needing to cross-reference this file while reading the page, not something built speculatively
+ahead of that need.
