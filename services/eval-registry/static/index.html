@@ -131,6 +131,19 @@
 
   .empty { color: var(--text-dim); font-size: 0.9rem; padding: 1.5rem 0; text-align: center; }
 
+  .case-list { border: 1px solid var(--border); border-radius: 8px; margin-top: 0.6rem; overflow: hidden; }
+  .case-row { border-bottom: 1px solid var(--border); }
+  .case-row:last-child { border-bottom: none; }
+  .case-summary {
+    display: flex; justify-content: space-between; align-items: baseline; gap: 0.6rem;
+    padding: 0.55rem 0.7rem; cursor: pointer; font-size: 0.85rem;
+  }
+  .case-summary:hover { background: var(--bg); }
+  .case-summary .input-text { font-family: var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .case-summary .chevron { color: var(--text-dim); flex-shrink: 0; }
+  .case-body { display: none; padding: 0 0.7rem 0.7rem; }
+  .case-row.expanded .case-body { display: block; }
+
   .detail {
     background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
     padding: 1.1rem 1.2rem; margin-top: 1rem;
@@ -395,7 +408,7 @@
 
       const caseField = el("div", { class: "field" });
       caseField.appendChild(el("div", { class: "field-label", text: "Dataset" }));
-      caseField.appendChild(el("div", { text: (suite.case_count !== null ? suite.case_count : "—") + " case(s)" }));
+      caseField.appendChild(el("div", { text: (suite.case_count !== null ? suite.case_count : "—") + " case(s) -- click one below to expand it" }));
       const dl = el("a", {
         text: "Download dataset (" + suite.name + "-" + suite.version + ".jsonl)",
         class: "download-link",
@@ -404,7 +417,10 @@
         },
       });
       caseField.appendChild(dl);
+      const caseListEl = el("div", { class: "case-list" });
+      caseField.appendChild(caseListEl);
       box.appendChild(caseField);
+      if (suite.case_count) loadCases(suite.name, suite.version, caseListEl);
     } else {
       const redteamField = el("div", { class: "field" });
       redteamField.appendChild(el("div", { class: "field-label", text: "Redteam config" }));
@@ -431,6 +447,53 @@
     }
 
     detailSlot.appendChild(box);
+  }
+
+  // Parses the dataset file's goldens (one JSON object per non-blank line) and renders each as
+  // a collapsible row -- the detail view previously only showed a bare case count plus a raw
+  // file download link, with nothing in the page actually clickable, which is exactly the
+  // reported "can't expand into a case" gap. GET /suites/{name}/{version}/dataset is already
+  // public, so this needs no new backend route.
+  async function loadCases(name, version, container) {
+    clear(container);
+    container.appendChild(el("div", { class: "empty", text: "Loading cases…" }));
+    let goldens;
+    try {
+      const resp = await fetch(
+        "/suites/" + encodeURIComponent(name) + "/" + encodeURIComponent(version) + "/dataset"
+      );
+      if (!resp.ok) throw new Error(await errorMessage(resp));
+      const text = await resp.text();
+      goldens = text
+        .split("\n")
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0)
+        .map((line) => JSON.parse(line));
+    } catch (err) {
+      clear(container);
+      container.appendChild(el("div", { class: "empty", text: "Couldn't load cases: " + err.message }));
+      return;
+    }
+
+    clear(container);
+    goldens.forEach((golden, index) => {
+      const row = el("div", { class: "case-row" });
+      const summary = el("div", { class: "case-summary" });
+      summary.appendChild(el("span", { class: "input-text", text: "#" + (index + 1) + "  " + golden.input }));
+      const chevron = el("span", { class: "chevron", text: "▸" });
+      summary.appendChild(chevron);
+      summary.addEventListener("click", () => {
+        const expanded = row.classList.toggle("expanded");
+        chevron.textContent = expanded ? "▾" : "▸";
+      });
+      row.appendChild(summary);
+
+      const bodyEl = el("div", { class: "case-body" });
+      bodyEl.appendChild(el("pre", { class: "block", text: JSON.stringify(golden, null, 2) }));
+      row.appendChild(bodyEl);
+
+      container.appendChild(row);
+    });
   }
 
   let searchTimer;
