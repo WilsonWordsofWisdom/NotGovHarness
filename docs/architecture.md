@@ -27,6 +27,10 @@ Registry service. Package, directory, Docker service, OAuth2 scope, and env vars
 historical decisions (D-008, D-017, D-043..D-047, D-098) keep saying "Agent Gateway," since that
 was accurate at the time.
 
+**Status (updated 2026-10-18):** MCP Gateway Registry's `/ui` is built and merged to `main`
+(`feat/ui-mcp-gateway-registry`; D-096, D-106) — the second of the five. Three remain planned:
+Eval Registry, Agent Registry, Identity Service.
+
 ## Platform map (harnesses + chosen anchors)
 
 ```mermaid
@@ -37,7 +41,7 @@ graph TB
         UI_HITL["✅ Approvals UI"]
         UI_EV["✅ Evals Runner UI"]
         UI_AB["✅ Agent Builder UI"]
-        UI_MG["🧩 MCP Gateway Registry UI"]
+        UI_MG["✅ MCP Gateway Registry UI"]
         UI_ER["🧩 Eval Registry UI"]
         UI_AR["🧩 Agent Registry UI"]
         UI_ID["🧩 Identity Service UI"]
@@ -107,8 +111,8 @@ graph TB
     classDef planned fill:#fdf3dc,stroke:#8a5a00,color:#8a5a00,stroke-dasharray: 5 5;
     class AB,EV,MG,GR,MEM,RAG,SBX,HITL,AR,SR,ER,ID,GW,OBS,AUD built;
     class DP planned;
-    class UI_SR,UI_HITL,UI_EV,UI_AB built;
-    class UI_MG,UI_ER,UI_AR,UI_ID planned;
+    class UI_SR,UI_HITL,UI_EV,UI_AB,UI_MG built;
+    class UI_ER,UI_AR,UI_ID planned;
 ```
 
 ## Engine map
