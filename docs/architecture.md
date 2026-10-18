@@ -38,6 +38,11 @@ Service.
 **Status (updated 2026-10-18):** Agent Registry's `/ui` is built (`feat/ui-agent-registry`;
 D-037, D-100, D-109) — the fourth of the five. One remains planned: Identity Service.
 
+**Status (updated 2026-10-18):** Identity Service's `/ui` is built (`feat/ui-identity-service`;
+D-099, D-110) — the fifth and last of the five. All eight self-hosted `/ui` pages across this
+platform are now built: Skill Registry, Approvals/HITL, Evals Runner (pre-existing), Agent
+Builder, MCP Gateway Registry, Eval Registry, Agent Registry, Identity Service (this pass).
+
 ## Platform map (harnesses + chosen anchors)
 
 ```mermaid
@@ -51,7 +56,7 @@ graph TB
         UI_MG["✅ MCP Gateway Registry UI"]
         UI_ER["✅ Eval Registry UI"]
         UI_AR["✅ Agent Registry UI"]
-        UI_ID["🧩 Identity Service UI"]
+        UI_ID["✅ Identity Service UI"]
     end
 
     subgraph L4["④ Agent Lifecycle"]
@@ -121,7 +126,7 @@ graph TB
     class UI_SR,UI_HITL,UI_EV,UI_AB,UI_MG built;
     class UI_ER built;
     class UI_AR built;
-    class UI_ID planned;
+    class UI_ID built;
 ```
 
 ## Engine map
@@ -219,7 +224,7 @@ alike, which then owns only its own page-specific markup and API calls (D-097).
 | MCP Gateway Registry UI | `mcp-gateway-registry` façade (`GET/POST /mcp-servers`, `GET /tools`, `POST /tools/{name}/call`) | Talks to the façade, never to ContextForge's own `:4444` admin UI directly — keeps this platform's identity/scope gate in the loop (D-098, same seam D-043 closed). |
 | Eval Registry UI | `eval-registry` (`GET/POST /suites`, `GET /suites/{name}/{version}/dataset`) | Same publish-via-pasted-bearer-token shape as Skill Registry's existing UI. |
 | Agent Registry UI | `agent-registry` only (`GET /agents`, `GET /agents/{name}/{version}/verify`, `POST /agents`) | Browse/verify is the landing view; manual publish is secondary (D-100) and takes an already-signed card, since this page never calls `identity-service` directly -- no CORS is configured anywhere in this codebase (D-109). |
-| Identity Service UI | `identity-service` (`GET /clients`, `POST /clients`, `GET /.well-known/jwks.json`) | Read-only client/scope/signing-key visibility plus client registration; deliberately no `/oauth/token` minting form (D-099). |
+| Identity Service UI | `identity-service` (`GET /clients`, `POST /clients`, `GET /.well-known/jwks.json`) | Read-only client/scope/signing-key visibility plus client registration; deliberately no `/oauth/token` minting form (D-099). `POST /clients` has no auth at all in the real backend -- confirmed live, flagged prominently in the UI, not fixed here (D-110). |
 
 ## Phase 0 substrate
 
