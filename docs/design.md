@@ -193,13 +193,21 @@ Browsing is fully public (`GET /agents`, `GET /agents/{name}[/{version}]`, and
 
 ## Identity Service UI — `identity-service`
 
-Landing view: **Clients**.
+**Status: built** (`feat/ui-identity-service`; D-099, D-110) — the fifth and last of the five.
+Landing view: **Clients**. **Browsing and registration are both fully public** — `GET /clients`
+and `POST /clients` have no `Depends()` for identity or scope at all, confirmed live (D-110),
+not just read in the code: a plain unauthenticated `curl -X POST /clients` really does create a
+client with any `allowed_scopes` string it asks for. This is a real gap in the backend, not a
+documented tradeoff, and the UI doesn't paper over it with a fake auth field.
 
-1. **Clients list** — `client_id` + `allowed_scopes` from `GET /clients`. No secret is ever shown
-   here (the API never returns one).
+1. **Clients list** — `client_id` + `spiffe_id` + `allowed_scopes` from `GET /clients`. No
+   secret is ever shown here (the API never returns one).
 2. **Register client form** — `client_id`, a **password-type** secret field with inline copy
-   text "this is hashed and stored — it will not be shown again, save it now," and an
-   `allowed_scopes` input. Calls `POST /clients`.
+   text "this is hashed and stored — it will not be shown again, save it now," an
+   `allowed_scopes` input, and an optional `spiffe_id`. Calls `POST /clients`. Carries a visible,
+   unmissable warning that this call needs no authorization at all in this deployment (D-110) —
+   the earlier design-pass mockup had speculatively added an "admin bearer token" field before
+   this was checked against the real backend; removed, since no such gate exists to model.
 3. **Signing keys** — read-only view of `GET /.well-known/jwks.json` (key id, algorithm, use),
    so an operator can confirm which key is currently active without needing a token-minting flow
    to find out.

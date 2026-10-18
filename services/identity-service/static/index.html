@@ -1,0 +1,387 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Identity Service</title>
+<style>
+  :root {
+    --bg: #f7f7f5;
+    --surface: #ffffff;
+    --border: #e2e0da;
+    --text: #24231f;
+    --text-dim: #6b6a63;
+    --accent: #7a5cff;
+    --accent-ink: #ffffff;
+    --accent-bg: #f1eeff;
+    --danger: #b3261e;
+    --danger-bg: #fbebea;
+    --warn: #8a5a00;
+    --warn-bg: #fdf3dc;
+    --ok: #146c2e;
+    --ok-bg: #e8f6ec;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #17161c;
+      --surface: #201f27;
+      --border: #34323d;
+      --text: #ece9f7;
+      --text-dim: #a29fb3;
+      --accent: #a48bff;
+      --accent-ink: #17161c;
+      --accent-bg: #241f3d;
+      --danger: #ff8f87;
+      --danger-bg: #3a201f;
+      --warn: #f0c26b;
+      --warn-bg: #3a2f14;
+      --ok: #7fd99a;
+      --ok-bg: #16301f;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #17161c;
+    --surface: #201f27;
+    --border: #34323d;
+    --text: #ece9f7;
+    --text-dim: #a29fb3;
+    --accent: #a48bff;
+    --accent-ink: #17161c;
+    --accent-bg: #241f3d;
+    --danger: #ff8f87;
+    --danger-bg: #3a201f;
+    --warn: #f0c26b;
+    --warn-bg: #3a2f14;
+    --ok: #7fd99a;
+    --ok-bg: #16301f;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    line-height: 1.5;
+  }
+  .wrap { max-width: 1040px; margin: 0 auto; padding: 2rem 1.5rem 4rem; }
+  header { margin-bottom: 1.5rem; }
+  header h1 { font-size: 1.5rem; margin: 0 0 0.25rem; letter-spacing: -0.01em; }
+  header p { margin: 0; color: var(--text-dim); font-size: 0.95rem; }
+
+  .banner {
+    background: var(--danger-bg); color: var(--danger); border: 1px solid var(--danger);
+    border-radius: 10px; padding: 0.9rem 1.1rem; margin-bottom: 1.5rem; font-size: 0.86rem;
+  }
+  .banner strong { display: block; margin-bottom: 0.25rem; font-size: 0.92rem; }
+
+  nav { display: flex; gap: 0.5rem; border-bottom: 1px solid var(--border); margin-bottom: 1.5rem; }
+  nav button {
+    background: none; border: none; cursor: pointer;
+    padding: 0.6rem 0.9rem; font-size: 0.9rem; color: var(--text-dim);
+    border-bottom: 2px solid transparent; margin-bottom: -1px;
+    font-family: inherit;
+  }
+  nav button.active { color: var(--text); border-bottom-color: var(--accent); font-weight: 600; }
+
+  .panel { display: none; }
+  .panel.active { display: block; }
+
+  input[type="text"], input[type="password"] {
+    width: 100%; padding: 0.55rem 0.7rem; border-radius: 8px;
+    border: 1px solid var(--border); background: var(--surface); color: var(--text);
+    font-family: inherit; font-size: 0.9rem;
+  }
+  label { display: block; font-size: 0.82rem; color: var(--text-dim); margin: 0.9rem 0 0.3rem; }
+  label:first-child { margin-top: 0; }
+
+  button.primary {
+    background: var(--accent); color: var(--accent-ink); border: none;
+    border-radius: 8px; padding: 0.6rem 1.1rem; font-size: 0.9rem; font-weight: 600;
+    cursor: pointer; font-family: inherit; margin-top: 1.1rem;
+  }
+  button.primary:disabled { opacity: 0.55; cursor: default; }
+  button.ghost {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+    padding: 0.5rem 0.8rem; cursor: pointer; font-family: inherit; color: var(--text);
+    font-size: 0.85rem;
+  }
+
+  .card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+    padding: 1.1rem 1.2rem; margin-bottom: 1rem;
+  }
+
+  table { border-collapse: collapse; width: 100%; margin-top: 0.5rem; }
+  th, td { text-align: left; padding: 0.6rem 0.5rem; font-size: 0.86rem; border-bottom: 1px solid var(--border); }
+  th { color: var(--text-dim); font-weight: 600; font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.03em; }
+
+  .chip {
+    display: inline-flex; background: var(--bg); border: 1px solid var(--border); border-radius: 12px;
+    padding: 0.15rem 0.55rem; font-size: 0.76rem; font-family: var(--mono); margin: 0.1rem 0.25rem 0 0;
+  }
+  .badge {
+    display: inline-flex; border-radius: 10px; padding: 0.1rem 0.5rem; font-size: 0.76rem; font-weight: 600;
+    font-family: var(--mono);
+  }
+  .badge.ok { background: var(--ok-bg); color: var(--ok); }
+
+  .mono { font-family: var(--mono); }
+  .empty { color: var(--text-dim); font-size: 0.9rem; padding: 1.5rem 0; text-align: center; }
+
+  .help {
+    background: var(--surface); border: 1px dashed var(--border); border-radius: 8px;
+    padding: 0.8rem 1rem; font-size: 0.82rem; color: var(--text-dim); margin-bottom: 1.2rem;
+  }
+
+  .result {
+    margin-top: 1.1rem; padding: 0.8rem 1rem; border-radius: 8px; font-size: 0.86rem;
+  }
+  .result.ok { background: var(--ok-bg); color: var(--ok); }
+  .result.err { background: var(--danger-bg); color: var(--danger); font-family: var(--mono); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Identity Service</h1>
+    <p>OAuth2 clients, scopes, and this platform's active signing keys.</p>
+  </header>
+
+  <div class="banner">
+    <strong>No bearer token on this page, anywhere -- and that's not a design choice, it's a real gap.</strong>
+    Unlike every other /ui page in this platform, nothing here is behind a scope check: browsing
+    clients and <strong>registering a brand new one</strong> both need zero authentication in the
+    current backend. Confirmed live, not assumed -- a caller with no Authorization header at all
+    can self-grant any <code>allowed_scopes</code> string it likes to a client it creates.
+    This is a genuine backend security gap on this reference platform (not fixed here --
+    it's a trust-model decision, not a UI change). Treat this page as read-only-in-spirit even
+    though the write actually works.
+  </div>
+
+  <nav>
+    <button id="tab-clients" class="active">Clients</button>
+    <button id="tab-keys">Signing Keys</button>
+  </nav>
+
+  <section id="panel-clients" class="panel active">
+    <div style="display:flex; justify-content:space-between; align-items:center;">
+      <button class="ghost" id="refresh-clients">Refresh</button>
+      <button class="ghost" id="toggle-register">Register client</button>
+    </div>
+
+    <div class="card" id="register-card" style="display:none; margin-top: 1rem;">
+      <h2 style="margin: 0 0 0.6rem; font-size: 1.05rem;">Register OAuth2 client</h2>
+      <form id="register-form">
+        <label for="client-id">Client ID</label>
+        <input type="text" id="client-id" required />
+
+        <label for="client-secret">Client secret</label>
+        <input type="password" id="client-secret" autocomplete="off" required />
+        <div class="help" style="margin: 0.4rem 0 0; color: var(--danger);">
+          This is hashed (bcrypt) server-side and never stored or shown again. Note it down now.
+        </div>
+
+        <label for="allowed-scopes">Allowed scopes (space-separated)</label>
+        <input type="text" id="allowed-scopes" placeholder="llm_gateway:call agent_gateway:call" />
+
+        <label for="spiffe-id">SPIFFE ID (optional)</label>
+        <input type="text" id="spiffe-id" placeholder="spiffe://notgovharness.local/..." />
+
+        <button type="submit" class="primary">Register</button>
+      </form>
+      <div id="register-result"></div>
+    </div>
+
+    <div id="clients-list" style="margin-top: 1rem;"></div>
+  </section>
+
+  <section id="panel-keys" class="panel">
+    <div id="keys-list" style="margin-top: 1rem;"></div>
+  </section>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  function el(tag, opts) {
+    const node = document.createElement(tag);
+    if (opts) {
+      if (opts.text !== undefined) node.textContent = opts.text;
+      if (opts.class) node.className = opts.class;
+      if (opts.attrs) for (const k in opts.attrs) node.setAttribute(k, opts.attrs[k]);
+    }
+    return node;
+  }
+
+  function clear(node) {
+    while (node.firstChild) node.removeChild(node.firstChild);
+  }
+
+  async function errorMessage(resp) {
+    try {
+      const data = await resp.json();
+      if (data && data.error) return data.error.code + ": " + data.error.message;
+    } catch (_err) { /* fall through */ }
+    return "request failed: " + resp.status;
+  }
+
+  // ---- tabs ----
+  const tabClients = document.getElementById("tab-clients");
+  const tabKeys = document.getElementById("tab-keys");
+  const panelClients = document.getElementById("panel-clients");
+  const panelKeys = document.getElementById("panel-keys");
+
+  function showTab(name) {
+    const clients = name === "clients";
+    tabClients.classList.toggle("active", clients);
+    tabKeys.classList.toggle("active", !clients);
+    panelClients.classList.toggle("active", clients);
+    panelKeys.classList.toggle("active", !clients);
+    if (!clients) loadKeys();
+  }
+  tabClients.addEventListener("click", () => showTab("clients"));
+  tabKeys.addEventListener("click", () => showTab("keys"));
+
+  // ---- clients (no auth on any of these routes -- confirmed live, D-110) ----
+  const clientsList = document.getElementById("clients-list");
+
+  async function loadClients() {
+    clear(clientsList);
+    let rows;
+    try {
+      const resp = await fetch("/clients");
+      if (!resp.ok) throw new Error(await errorMessage(resp));
+      rows = await resp.json();
+    } catch (err) {
+      clientsList.appendChild(el("div", { class: "empty", text: "Couldn't load clients: " + err.message }));
+      return;
+    }
+    if (rows.length === 0) {
+      clientsList.appendChild(el("div", { class: "empty", text: "No clients registered yet." }));
+      return;
+    }
+    const table = el("table");
+    const thead = el("thead");
+    const headRow = el("tr");
+    for (const h of ["Client ID", "SPIFFE ID", "Allowed scopes"]) headRow.appendChild(el("th", { text: h }));
+    thead.appendChild(headRow);
+    table.appendChild(thead);
+    const tbody = el("tbody");
+    for (const row of rows) {
+      const tr = el("tr");
+      tr.appendChild(el("td", { text: row.client_id, class: "mono" }));
+      tr.appendChild(el("td", { text: row.spiffe_id || "—", class: "mono" }));
+      const scopesCell = el("td");
+      const scopes = (row.allowed_scopes || "").split(" ").filter((s) => s.length > 0);
+      if (scopes.length === 0) {
+        scopesCell.appendChild(el("span", { text: "—" }));
+      } else {
+        for (const s of scopes) scopesCell.appendChild(el("span", { class: "chip", text: s }));
+      }
+      tr.appendChild(scopesCell);
+      tbody.appendChild(tr);
+    }
+    table.appendChild(tbody);
+    clientsList.appendChild(table);
+  }
+
+  document.getElementById("refresh-clients").addEventListener("click", loadClients);
+
+  const registerCard = document.getElementById("register-card");
+  const toggleRegister = document.getElementById("toggle-register");
+  toggleRegister.addEventListener("click", () => {
+    const showing = registerCard.style.display !== "none";
+    registerCard.style.display = showing ? "none" : "block";
+    toggleRegister.textContent = showing ? "Register client" : "Cancel";
+  });
+
+  const registerForm = document.getElementById("register-form");
+  const registerResult = document.getElementById("register-result");
+  registerForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    clear(registerResult);
+    const body = {
+      client_id: document.getElementById("client-id").value.trim(),
+      client_secret: document.getElementById("client-secret").value,
+      allowed_scopes: document.getElementById("allowed-scopes").value.trim(),
+      spiffe_id: document.getElementById("spiffe-id").value.trim() || null,
+    };
+    const submitBtn = registerForm.querySelector("button[type=submit]");
+    submitBtn.disabled = true;
+    try {
+      const resp = await fetch("/clients", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!resp.ok) {
+        registerResult.appendChild(el("div", { class: "result err", text: await errorMessage(resp) }));
+        return;
+      }
+      const data = await resp.json();
+      registerResult.appendChild(el("div", { class: "result ok", text: "Registered " + data.client_id + "." }));
+      registerForm.reset();
+      registerCard.style.display = "none";
+      toggleRegister.textContent = "Register client";
+      await loadClients();
+    } catch (err) {
+      registerResult.appendChild(el("div", { class: "result err", text: "Network error: " + err.message }));
+    } finally {
+      submitBtn.disabled = false;
+    }
+  });
+
+  // ---- signing keys ----
+  const keysList = document.getElementById("keys-list");
+  let keysLoaded = false;
+
+  async function loadKeys() {
+    if (keysLoaded) return;
+    clear(keysList);
+    let keys;
+    try {
+      const resp = await fetch("/.well-known/jwks.json");
+      if (!resp.ok) throw new Error(await errorMessage(resp));
+      keys = (await resp.json()).keys || [];
+    } catch (err) {
+      keysList.appendChild(el("div", { class: "empty", text: "Couldn't load signing keys: " + err.message }));
+      return;
+    }
+    keysLoaded = true;
+    if (keys.length === 0) {
+      keysList.appendChild(el("div", { class: "empty", text: "No signing keys published." }));
+      return;
+    }
+    const table = el("table");
+    const thead = el("thead");
+    const headRow = el("tr");
+    for (const h of ["kid", "alg", "use", "kty"]) headRow.appendChild(el("th", { text: h }));
+    thead.appendChild(headRow);
+    table.appendChild(thead);
+    const tbody = el("tbody");
+    for (const key of keys) {
+      const tr = el("tr");
+      tr.appendChild(el("td", { text: key.kid || "", class: "mono" }));
+      tr.appendChild(el("td", { text: key.alg || "", class: "mono" }));
+      tr.appendChild(el("td", { text: key.use || "", class: "mono" }));
+      tr.appendChild(el("td", { text: key.kty || "", class: "mono" }));
+      tbody.appendChild(tr);
+    }
+    table.appendChild(tbody);
+    keysList.appendChild(table);
+    const note = el("p", {
+      text: "This is the key currently signing new OAuth2 tokens and Agent Cards. Identity-service's signing key isn't persisted across restarts, and a caller's own cached view of this list can outlive a rotation too -- confirmed live, a card's Verify result in Agent Registry depends on whether THAT service still has the signing kid cached, not just on what's listed here right now.",
+      attrs: { style: "font-size: 0.78rem; color: var(--text-dim); margin-top: 0.8rem;" },
+    });
+    keysList.appendChild(note);
+  }
+
+  loadClients();
+})();
+</script>
+</body>
+</html>

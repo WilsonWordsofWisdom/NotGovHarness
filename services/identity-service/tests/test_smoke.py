@@ -10,3 +10,9 @@ def test_jwks_exposes_a_key():
     body = TestClient(app).get("/.well-known/jwks.json").json()
     assert body["keys"][0]["kty"] == "RSA"
     assert body["keys"][0]["alg"] == "RS256"
+
+
+def test_ui_index_is_served():
+    resp = TestClient(app).get("/ui/")
+    assert resp.status_code == 200
+    assert "Identity Service" in resp.text

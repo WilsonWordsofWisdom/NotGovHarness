@@ -1630,3 +1630,50 @@ in the browser): the Advanced tab is already secondary and de-emphasized by desi
 to make a rarely-used manual path one step shorter isn't worth the scope; the `curl`-then-paste
 shape already matches how every other credential-adjacent step in this platform's `/ui` pages
 works.
+
+---
+
+## 2026-10-18 — Identity Service UI: `POST /clients` has no authentication at all, confirmed live
+
+**D-110 — `POST /clients` (register a new OAuth2 client) has zero auth gating in the real
+backend — no `Depends()` for identity or scope at all, confirmed live, not just read in code.**
+A plain `curl -X POST http://localhost:8090/clients` with no `Authorization` header and
+`allowed_scopes: "registry:publish agentcard:sign"` succeeded and created a real client
+self-granting both scopes. This is a genuine gap, not a documented, narrowly-scoped tradeoff
+the way D-043/D-047's SSRF/DNS-rebinding loosenings are — there's no comment anywhere in
+`register_client` explaining or intending this, unlike every other deliberate security
+narrowing already logged in this file. On a platform whose whole Foundation layer is built
+around SPIFFE/OAuth2 trust (D-010), the one endpoint that actually creates new trusted
+identities being open to anyone with network access is a real inconsistency worth surfacing
+loudly, not quietly working around.
+
+**What this means for the UI, and what it doesn't:** the register-client form can't pretend an
+authorization gate exists where the backend has none — no fabricated "admin token" field (the
+earlier design-pass mockup had speculatively added one, before this was checked against real
+code; removed). Instead the form carries a visible, unmissable warning that this call is
+currently unauthenticated in this deployment. **Not fixed here**: adding real auth to this
+endpoint is a backend security fix, not a UI task, and changes this platform's trust model in a
+way that deserves its own deliberate pass (who's allowed to register a client — an
+`admin`-scoped token? a separate bootstrap-only credential? SPIRE attestation once that lands
+per the `Client` model's own docstring?) rather than a quick patch bundled into a `/ui` branch.
+Flagged here so it isn't lost, same posture as the Postgres connection-pressure and CORS
+findings on the last two branches — disclosed, not silently worked around or silently left
+unmentioned.
+
+**Addendum — correcting a claim made in the Agent Registry PR (#6):** that PR's description said
+a card's Verify result depends on whether its signing key is "still in identity-service's
+current JWKS." Checked more carefully while writing this page's signing-keys explanation and
+found that's not quite what the code does: `agent-registry`'s `jwt.PyJWKClient(...,
+cache_keys=True)` caches every key it has ever successfully resolved, cumulatively, across the
+lifetime of its own process — it only refetches identity-service's JWKS when a requested `kid`
+isn't already in that cache. Confirmed live: restarting `identity-service` alone (rotating its
+key, since it generates a fresh ephemeral RSA keypair every startup by design — ``generate_
+signing_key``'s own docstring: "a restart invalidating previously-issued tokens is expected, not
+a bug") did **not** immediately fail a card signed under the *previous* key, because
+`agent-registry`'s own long-running process still had that `kid` cached from an earlier lookup.
+Only after separately restarting `agent-registry` too (clearing its cache) did that same card's
+Verify correctly fail. So the real condition is "does *this specific* `agent-registry` process
+still recognize the key," not "is the key in identity-service's live JWKS right now" — two
+different things that happen to usually agree, except right after one service restarts without
+the other. `design.md`'s identity-service section states this more precisely than the PR
+description did.

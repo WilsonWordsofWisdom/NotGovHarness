@@ -6,10 +6,13 @@ docs/superpowers/specs/2026-08-23-agent-identity-harness-design.md for the full 
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import bcrypt
 from fastapi import Depends, FastAPI, Form, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -168,6 +171,14 @@ def build_app() -> FastAPI:
     @app.get("/clients", tags=["admin"], response_model=list[ClientOut])
     async def list_clients(session: AsyncSession = Depends(get_session)) -> list[Client]:
         return list((await session.execute(select(Client))).scalars().all())
+
+    static_dir = Path(__file__).resolve().parents[2] / "static"
+    if static_dir.is_dir():
+        # Mounted last, after every API route above: Starlette matches routes in registration
+        # order, so /clients and friends are still handled by the API -- this only catches paths
+        # nothing else claimed (/ui, /ui/index.html). Same shape as Skill Registry's /ui
+        # (D-037).
+        app.mount("/ui", StaticFiles(directory=static_dir, html=True), name="ui")
 
     return app
 
