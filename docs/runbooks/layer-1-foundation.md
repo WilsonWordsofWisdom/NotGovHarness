@@ -101,13 +101,36 @@ real failure was observed, not guessed at up front — the whole platform favors
 it break for a real reason, then fix that specific thing" over speculatively engineering for
 problems that might never happen.
 
+**Agent Identity's `/ui` page is read-only for clients/scopes/signing keys, plus the one write
+that genuinely needs a form — registering a new client (D-099).** There's deliberately no
+"mint a token" playground: `POST /oauth/token` takes a `client_id`/`client_secret` pair as plain
+form fields, exactly the credential-in-a-browser-form shape already rejected for every other
+registry's publish UI — adding it to the one service that actually owns these secrets would be
+the same anti-pattern with higher stakes. Operators mint tokens the way every other flow in this
+platform already does: curl/httpx against `/oauth/token` directly.
+
+**Two real gaps in `POST /clients` were found live while building that page, not fixed, and
+surfaced loudly instead (D-110, D-111).** `POST /clients` has no authentication gating at all —
+confirmed by registering a client with a plain, unauthenticated `curl` call that succeeded and
+self-granted whatever scopes it asked for. Separately, `spiffe_id` has no uniqueness constraint
+either — two different clients were registered live with the identical SPIFFE ID, and both
+succeeded. Both are real inconsistencies on a service whose entire purpose is being the
+platform's trust root, not documented, narrow tradeoffs the way D-043/D-047's loosenings
+elsewhere are — logged honestly and surfaced in the UI's warning banner rather than quietly
+patched or silently left undocumented. Fixing either is a backend trust-model decision (who's
+allowed to register a client? reject or dedupe a colliding SPIFFE ID?), deliberately left for a
+dedicated pass rather than a quick patch bundled into a `/ui` branch.
+
 ## Key components
 
 **Agent Identity (`identity-service`, port 8090).** Issues and verifies badges (OAuth2 tokens);
 also signs Agent Cards later on. Runs alongside SPIRE (separate infrastructure containers:
 `spire-server`, `spire-agent`, `spire-bootstrap`) which handles a different, lower-level kind of
 machine-to-machine trust (mutual TLS certificates) — SPIRE and identity-service currently run
-side by side rather than being fully wired together in code.
+side by side rather than being fully wired together in code. Has its own self-hosted browsing
+page at `/ui` (D-099): a **Clients** tab (list + register, with a prominent warning banner
+covering D-110 and D-111) and a **Signing Keys** tab (read-only view of
+`/.well-known/jwks.json`).
 
 **LLM Gateway (`llm-gateway`, port 8099).** The one door every AI model call passes through.
 Behind it sits LiteLLM (port 4000, its own container), which itself talks to the developer's own
@@ -141,7 +164,9 @@ you see the same patterns repeat across many services, this is why.
 | `src/identity_service/cards.py` | Signs Agent Cards using the same key as badges |
 | `src/identity_service/models.py` | The database table listing every registered caller (`clients`) and what they're allowed to do |
 | `src/identity_service/main.py` | Wires everything into a web service: the `/oauth/token` (get a badge), `/.well-known/jwks.json` (the public key list anyone can check a badge against), `/cards/sign`, and `/clients` endpoints |
+| `static/index.html` | The Clients + Signing Keys browsing/registration page at `/ui` |
 | `migrations/versions/0001_clients.py` through `0017_deployment_pipeline_scope.py` | Seventeen incremental database setup scripts — the first creates the caller-registry table; every one after that grants a newly-built service permission to call other services, one small addition per new harness built. This growing list is itself a record of the platform's own build history. |
+| `migrations/versions/0018_rename_agent_gateway_scope.py` | Updates the two live clients that already held the old `agent_gateway:call` scope string to `mcp_gateway_registry:call` in place (D-105) — the historical migrations above it are left untouched, since they're already-applied history. |
 
 ### `services/llm-gateway/`
 
@@ -252,6 +277,9 @@ wrong somewhere."
 - **A new client can't authenticate at all.** Check its database-setup migration actually ran
   (`docker compose logs identity-service` shows this on startup), and that the password you're
   using matches exactly what was set up in that migration.
+- **A client was registered with scopes or a SPIFFE ID nobody intended.** `POST /clients` has no
+  authentication and no SPIFFE-ID uniqueness check (D-110, D-111) — this isn't a bug to debug,
+  it's a known, disclosed gap; anyone with network access to this endpoint can currently do this.
 - **Model calls timing out on anything complex** (a long AI-judged evaluation, a multi-step agent
   task) — the 120-second timeout was already raised once for exactly this reason; if it's still
   not enough, that's the setting to revisit, not the caller's own retry logic.

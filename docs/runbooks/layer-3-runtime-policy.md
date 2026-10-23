@@ -1,10 +1,10 @@
 # Layer 3 — Runtime & Policy
 
-> **Note on naming:** this file is ported verbatim from the original knowledge-transfer document
-> and predates D-105 (the rename of Agent Gateway to **MCP Gateway Registry**). It still says
-> "Agent Gateway" throughout, matching the name at the time it was written — see the runbooks
-> [README](README.md) for why this isn't rewritten, and `docs/decisions.md` D-105 for the rename
-> itself.
+> **Note on naming (updated 2026-10-23):** this service was originally named **Agent Gateway**
+> and is referred to that way in `docs/decisions.md` entries written before 2026-10-18 (D-008,
+> D-017, D-043 through D-047, D-098) — those historical entries are left exactly as written, per
+> `docs/decisions.md`'s own "don't rewrite history" policy. This file has been updated to use its
+> current name, **MCP Gateway Registry** (D-105), throughout.
 
 This is the biggest layer — six services — because it covers everything an agent actually touches
 while it's running: the tools it's allowed to call, the safety checks on what it says, its
@@ -14,7 +14,7 @@ pause and ask a human before doing something risky.
 ```mermaid
 %%{init: {'theme':'base', 'themeVariables': {'darkMode': false, 'background':'#ffffff'}}}%%
 flowchart TB
-    Agent["An AI agent,\nrunning"] -->|"call a tool"| MG["Agent Gateway\n→ ContextForge"]
+    Agent["An AI agent,\nrunning"] -->|"call a tool"| MG["MCP Gateway Registry\n→ ContextForge"]
     Agent -->|"check this output\nis safe"| GR["Guardrails"]
     Agent -->|"remember /\nrecall a fact"| MEM["Memory\n(Mem0)"]
     Agent -->|"search documents"| RAG["Knowledge / RAG"]
@@ -37,7 +37,7 @@ draw on, not a fixed pipeline every request passes through.*
 This layer answers: **"now that an agent is running, what is it actually allowed to do, and
 who's watching?"**
 
-- **Agent Gateway** is the tool room — agents don't get direct access to external tools/systems;
+- **MCP Gateway Registry** is the tool room — agents don't get direct access to external tools/systems;
   they check them out through here, so there's one controlled door and one place to see what's
   being used.
 - **Guardrails** is the content moderator — checks text (going in or coming out) for unsafe
@@ -59,7 +59,7 @@ just talk.
 
 | Service | Core technology | What it's for |
 |---|---|---|
-| Agent Gateway | ContextForge (an off-the-shelf, open-source tool-gateway product, IBM's `mcp-context-forge`), fronted by our own thin proxy | Speaks MCP (the emerging industry-standard protocol for AI tool-calling) so any MCP-compatible tool can be wired in |
+| MCP Gateway Registry | ContextForge (an off-the-shelf, open-source tool-gateway product, IBM's `mcp-context-forge`), fronted by our own thin proxy | Speaks MCP (the emerging industry-standard protocol for AI tool-calling) so any MCP-compatible tool can be wired in |
 | Guardrails | Three separate open-source safety libraries run together: LLM Guard, NeMo Guardrails, Guardrails AI | Defense in depth — three independent checks rather than trusting one |
 | Memory | Mem0 (an open-source agent-memory library), on the platform's shared Postgres database (using its `pgvector` extension for similarity search), FastEmbed (a lightweight, in-container AI embedding model) | Remembering and recalling facts |
 | Knowledge / RAG | LlamaIndex (an open-source retrieval-augmented-generation toolkit), the same Postgres+pgvector pattern, FastEmbed again for both embedding and re-ranking | Document search grounded in real sources |
@@ -110,12 +110,42 @@ bolted on. Temporal keeps the entire "wait for a decision or 24 hours, whichever
 logic durably in place even if the service restarts — no separate scheduler needed, and it's the
 exact same underlying engine Deployment Pipeline (Layer 4) reuses later for a similar need.
 
+**Renamed from Agent Gateway to MCP Gateway Registry, name only, same service (D-105).** Raised
+by the user while planning this service's `/ui`: "Agent Gateway" reads as if it gateways
+*agents*, but it actually gateways *MCP tools* through ContextForge — a real, different concern
+from the separate Agent Registry service (Layer 2) a few lines away on the same platform map,
+and the name collision was confusing enough to fix. Renamed full-stack: the service directory and
+Python package, the `AgentGatewayTool` CrewAI adapter in Agent Builder (Layer 4), the OAuth2
+scope (`agent_gateway:call` → `mcp_gateway_registry:call`, with a new migration updating the live
+clients that already held the old string rather than leaving it stale), and every
+`docker-compose.yml` reference. One real, disclosed data loss happened along the way: something
+ran `docker compose up --build` on the `gateway` profile between the compose-file edit and the
+planned careful database rename, so the old Postgres database was already gone by the time that
+was checked — ContextForge auto-bootstrapped a fresh, empty one instead of the rename preserving
+its rows. Only prior test tool/server registrations were lost (these re-create themselves
+idempotently the next time anything registers), not anything load-bearing, but it's recorded as
+a real loss, not a clean rename.
+
+**The MCP registry UI lives on this service (the façade), not on ContextForge directly
+(D-098).** ContextForge ships its own admin UI at `:4444`, published only for local debugging —
+this service is the only intended caller, so this platform's own identity/scope model gates every
+caller instead of ContextForge's own bootstrap admin login. A UI that talked to ContextForge
+directly would bypass that gating the same way a direct-to-ContextForge agent call would.
+
 ## Key components
 
-**Agent Gateway (`agent-gateway`, port 8095) + ContextForge (a separate container, port 4444).**
-Agent Gateway is a thin, identity-checking front door; ContextForge is the actual off-the-shelf
-product doing the tool-hosting work behind it. Agent Gateway holds ContextForge's own login
-credential privately — callers never see it, only their own platform badge.
+**MCP Gateway Registry (`mcp-gateway-registry`, port 8095) + ContextForge (a separate container,
+port 4444).** MCP Gateway Registry is a thin, identity-checking front door; ContextForge is the
+actual off-the-shelf product doing the tool-hosting work behind it. MCP Gateway Registry holds
+ContextForge's own login credential privately — callers never see it, only their own platform
+badge. Has its own `/ui` (D-098, D-106): every route, reads included, requires a bearer token
+scoped `mcp_gateway_registry:call` — unlike the registries in Layer 2, there's no public-browse
+tier here. **MCP servers** list + register form, a **Tools** list (the federated name, the
+original tool name, and which server it came from), and a **tool console** (pick a tool, edit its
+call arguments as JSON, see the real result). The console checks for a JSON-RPC-level `error` key
+even on an HTTP 200 (D-106) — `POST /tools/{name}/call` can succeed at the HTTP level while the
+tool call itself failed, confirmed against the real running service, not assumed from the API
+shape.
 
 **Guardrails (`guardrails-service`, port 8098).** Runs a request's text through three
 independent open-source safety checkers and combines the results. No AI model call of its own for
@@ -148,13 +178,14 @@ again later by Deployment Pipeline in Layer 4.
 
 ## Every file, script, and artefact in this layer
 
-### `services/agent-gateway/`
+### `services/mcp-gateway-registry/`
 
 | File | What it does |
 |---|---|
-| `src/agent_gateway/config.py` | Settings, including ContextForge's own login details |
-| `src/agent_gateway/contextforge.py` | Logs into ContextForge, caches that login, and forwards tool-related requests to it |
-| `src/agent_gateway/main.py` | The four proxy endpoints: register a tool source, list tool sources, list tools, call a tool |
+| `src/mcp_gateway_registry/config.py` | Settings, including ContextForge's own login details |
+| `src/mcp_gateway_registry/contextforge.py` | Logs into ContextForge, caches that login, and forwards tool-related requests to it |
+| `src/mcp_gateway_registry/main.py` | The four proxy endpoints: register a tool source, list tool sources, list tools, call a tool |
+| `static/index.html` | The MCP Servers / Tools / tool-console page at `/ui` |
 
 No database, no migrations — this service holds no data of its own; ContextForge (a separate
 container) holds the real state.
@@ -211,11 +242,11 @@ container) holds the real state.
 
 ## How the key logic actually works
 
-**Calling a tool through Agent Gateway.** The service keeps one login session with ContextForge,
+**Calling a tool through MCP Gateway Registry.** The service keeps one login session with ContextForge,
 refreshing it automatically before it expires. If ContextForge ever rejects that session
 unexpectedly (for example, because ContextForge itself restarted), the code logs in fresh exactly
 once and retries — the caller never sees that hiccup. Every proxied call still requires the
-caller's own platform badge first; Agent Gateway is a second, inner door behind the platform's
+caller's own platform badge first; MCP Gateway Registry is a second, inner door behind the platform's
 main one, not a replacement for it.
 
 **Running all three Guardrails checks — `_run_all_layers()`.** Deliberately does *not* stop at
@@ -297,8 +328,8 @@ racing each other, can't corrupt the outcome.
 ## Common failures
 
 - **ContextForge-related calls failing right after a ContextForge restart** — the cached login
-  session became invalid; Agent Gateway should recover automatically on the next call, but if it
-  doesn't, check `contextforge`'s own container logs, not `agent-gateway`'s.
+  session became invalid; MCP Gateway Registry should recover automatically on the next call, but if it
+  doesn't, check `contextforge`'s own container logs, not `mcp-gateway-registry`'s.
 - **A container running IBM's ContextForge image refuses to start at all.** Check its bootstrap
   admin email setting isn't using a reserved-looking domain (like `.local`) — its own
   email-validation library rejects those outright.

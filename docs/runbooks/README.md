@@ -34,7 +34,7 @@ graph TB
         EV["Evals"]
     end
     subgraph L3["Layer 3 — Runtime & Policy: what an agent can do, and who checks its work"]
-        MG["Agent Gateway"]
+        MG["MCP Gateway Registry"]
         GR["Guardrails"]
         MEM["Memory"]
         RAG["Knowledge / RAG"]
@@ -104,10 +104,12 @@ real decision and bug found while building this (D-001 through D-111 as of this 
 has the engineering team's own architecture diagrams. [`docs/implementation-plan.md`](../implementation-plan.md)
 is the build history.
 
-**Note on freshness (added when porting this document into the repo, 2026-10-23):** the
-original knowledge-transfer document was written as of 2026-09-25, when all 16 harnesses had
-just been completed. Since then, D-096 through D-111 added a self-hosted `/ui` page to five more
-services and renamed the Agent Gateway harness to **MCP Gateway Registry** (D-105) — this
-document still says "Agent Gateway" throughout, matching the name at the time it was written,
-the same "don't rewrite history" posture `docs/decisions.md` already uses. See `docs/design.md`
-for the `/ui` pages and D-105 for the rename.
+**Note on freshness (updated 2026-10-23):** the original knowledge-transfer document was written
+as of 2026-09-25, when all 16 harnesses had just been completed, and was ported into this repo
+as-is. It has since been brought current: every layer file below now reflects D-096 through
+D-111 — the self-hosted `/ui` page added to five more services (Agent Builder, MCP Gateway
+Registry, Eval Registry, Agent Registry, Identity Service), the Agent Gateway → **MCP Gateway
+Registry** rename (D-105, applied throughout this document now, not just in new material), and
+the real gaps found while building those pages (D-109 no CORS, D-110 unauthenticated client
+registration, D-111 no SPIFFE ID uniqueness check). See `docs/design.md` for the full per-page
+view specs and `docs/decisions.md` for every decision this document references.

@@ -92,13 +92,51 @@ MinIO file-storage wrapper was originally written for Skill Registry, but placed
 built — was already known to need the exact same capability. Not speculative "we might need this
 someday" work; a named, concrete next user justified building it as shared code from day one.
 
+**Agent Registry's `/ui` makes browse + verify the primary path; manual sign-and-publish is a
+secondary, clearly-labeled "Advanced" tab, not the landing view (D-100).** In practice every
+published card is signed and published by Agent Builder's own `_sign_and_publish_card` — a human
+has little reason to hand-author a card JSON day to day. The manual form is kept because
+`POST /agents` and `/cards/sign` are both real, reachable endpoints worth being able to drive
+directly (e.g. a manually-authored demo card), but it's placed behind a secondary tab so the UI
+doesn't imply hand-publishing is the normal way agents get registered. **Its exact shape was
+further corrected once building it revealed a real gap (D-109):** the original plan had it sign
+a card itself by calling `identity-service`'s `/cards/sign` directly from the browser, but
+`platform_core.app`'s shared app factory configures no CORS anywhere in this codebase — a real
+`OPTIONS` preflight against `/cards/sign` from a different origin came back `405` with no
+`Access-Control-Allow-Origin` header, which every real browser would block before the actual
+`POST` is even sent. Fixed by having the Advanced tab take an already-signed card (the three
+signature fields pasted in directly, with a `curl` snippet showing how to get them from
+`identity-service` first) and call only Agent Registry's own same-origin `POST /agents` — no
+cross-origin call at all.
+
+**Eval Registry's `/ui` design was corrected against the live service before it was built, the
+same discipline applied everywhere else in this layer (D-107).** The original plan assumed
+`GET /suites` returns a version per row and that browsing needs a bearer token; neither is true
+against the real running service: `list_suites` dedupes to one row per name with no version
+field at all (a version only exists once a specific suite is opened), and every `GET` route here
+has no identity check at all — browsing is fully public, the same posture as Skill Registry,
+unlike Agent Builder or MCP Gateway Registry where every route needs a token. Only `POST /suites`
+does.
+
+**Eval Registry's suite-detail interaction went through three real iterations, each a genuine
+fix to a problem a user actually hit, not polish for its own sake (D-108).** First shipped as one
+shared detail panel after the entire suite list — functionally correct, but invisible with 47+
+real suites, since clicking an early card updated content far below the visible screen. First fix
+(`scrollIntoView()`) was itself rejected as the wrong interaction, not just under-signposted.
+Real fix: each suite card now owns its own sibling detail container that opens and closes in
+place, as a true accordion, with a distinct background color on the active card so it's visually
+unambiguous which one is open — a need only surfaced once the interaction itself was already
+correct.
+
 ## Key components
 
 **Agent Registry (`agent-registry`, port 8092).** Stores signed Agent Cards. Publishing checks
 the signature is genuine before accepting anything; `GET /agents/{name}/{version}/verify` lets
 anyone re-check a stored card's signature at any time, which is exactly what catches someone
 tampering with the database directly, bypassing the API. No file storage needed — everything
-fits in the database.
+fits in the database. Browsing (including verify) is fully public; has its own `/ui` (D-100) with
+an **Agents** list (inline-accordion card detail, same pattern as Eval Registry below, plus a
+**Verify** button) and a secondary **Advanced** tab for manual publish.
 
 **Skill Registry (`skill-registry`, port 8093).** Stores Agent Skills — packages with a required
 `SKILL.md` instructions file plus optional supporting scripts/files. A skill's core description
@@ -110,7 +148,9 @@ browsing web page at `/ui`.
 fixed set of question-and-correct-answer pairs, stored as a downloadable file) and "redteam" (a
 generator config for adversarial/security testing, with no fixed file — it produces test cases on
 the fly later). This is a from-scratch design with no external industry standard to follow,
-unlike the other two registries.
+unlike the other two registries. Browsing is fully public; has its own `/ui` (D-107, D-108) with
+a **Suites** list (inline-accordion detail per card, each golden case within a "cases" suite
+individually expandable) and a **Publish** tab (multipart form, kind-specific body).
 
 ## Every file, script, and artefact in this layer
 
@@ -122,6 +162,7 @@ unlike the other two registries.
 | `src/agent_registry/models.py` | The database table storing every published card |
 | `src/agent_registry/verify.py` | Checks a card's signature is genuine — the security-critical logic |
 | `src/agent_registry/main.py` | The web endpoints: publish, list, fetch, and verify |
+| `static/index.html` | The browsing/publishing page at `/ui` — Agents list + Advanced (manual publish) tab |
 | `migrations/versions/0001_agent_cards.py` | Creates the one database table this service needs |
 
 ### `services/skill-registry/`
@@ -146,6 +187,7 @@ unlike the other two registries.
 | `src/eval_registry/scan.py` | Scans a suite's grading instructions for known-bad patterns (an AI judge reading a rigged grading rubric is the same kind of risk as an agent reading rigged instructions) |
 | `src/eval_registry/models.py` | The database table |
 | `src/eval_registry/main.py` | The web endpoints: publish, list, fetch, download the dataset |
+| `static/index.html` | The browsing/publishing page at `/ui` — Suites list (inline accordion) + Publish tab |
 | `migrations/versions/0001_suites.py` | Creates the one database table this service needs |
 
 ### Shared code used by two or more of these (`packages/platform-core/`)

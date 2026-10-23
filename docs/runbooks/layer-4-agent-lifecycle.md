@@ -1,9 +1,5 @@
 # Layer 4 — Agent Lifecycle
 
-> **Note on naming:** this file is ported verbatim from the original knowledge-transfer document
-> and refers to **Agent Gateway** in one spot (`agent_gateway_tool.py`), predating D-105's rename
-> to **MCP Gateway Registry**. See the runbooks [README](README.md) for why this isn't rewritten.
-
 This is the top layer — it's where everything below finally gets used to actually build, deploy,
 and grade a real AI agent, start to finish.
 
@@ -116,12 +112,50 @@ correctly once the timer did fire. The unresolved half: *why* it took so much lo
 configured is not yet understood, and is written down as an open question rather than quietly
 ignored or assumed to be fine.
 
+**Agent Builder's `/ui` reuses the same pattern already shipped elsewhere, not a new stack
+(D-096), and its design was corrected against the real `Build` row shape before being built
+(D-101).** The earlier design pass had assumed a `status` column and visible role/goal fields;
+reading `models.py` directly showed neither exists — `create_build` only ever persists a `Build`
+row *after* kickoff, sign, and publish have all already succeeded, so a failed build is never a
+browsable row, only a one-time error response. Role/goal aren't shown on the build detail screen
+either, since the API genuinely has nowhere to read them back from afterward.
+
+**Per-agent knowledge-base file uploads were deliberately deferred, not built, after checking
+what it would actually take (D-102).** Reading `knowledge-service`'s real ingest/query code
+first showed it's one global corpus with only a shared/private visibility split and no
+per-agent scoping at all — wiring uploads straight into it as-is would let one agent's reference
+material leak into every other agent's answers. Doing this properly needs a scope/tag field added
+to `knowledge-service` itself plus a new CrewAI tool here to retrieve scoped to that tag, a
+cross-service feature logged for later rather than half-built now.
+
+**"Editing" a build is a new, versioned revision, never an in-place mutation (D-103).**
+`POST /builds/{name}/revise` looks up the latest published version for that name, bumps it
+(minor+1, patch reset — a revised role/goal/backstory/task is a behavior change, not a
+patch-level fix), re-runs kickoff with the edited fields, and publishes a new card version plus a
+new `Build` row; the original row and card are left untouched. This matches `Build`'s own
+documented shape as an append-only audit trail, the same pattern as Sandbox's `executions` and
+Guardrails' `checks` — mutating a row in place would have broken that pattern for the first time
+in this codebase.
+
+**`backstory` was made optional with a generated default, then removed from the UI entirely
+(D-104).** It's CrewAI's own required `Agent` constructor field, confirmed against the installed
+library — not something this harness invented, so it can't simply be dropped. But the user found
+no value in writing one by hand across two rounds of feedback, so when omitted it's now
+auto-generated from role/goal (`f"An AI agent acting as {role}, focused on: {goal}"`) rather than
+asked for on the form.
+
 ## Key components
 
 **Agent Builder (`agent-builder-service`, port 8102).** Given a role, goal, personality, and
-task, runs a real CrewAI agent (which can genuinely call a tool through Agent Gateway, not just
-claim to), then signs and publishes the result as an Agent Card. Also looks up which eval suites
-might be relevant to this new agent.
+task, runs a real CrewAI agent (which can genuinely call a tool through MCP Gateway Registry, not
+just claim to), then signs and publishes the result as an Agent Card. Also looks up which eval
+suites might be relevant to this new agent. Has its own `/ui` (D-096, D-101, D-103, D-104) — every
+route needs a bearer token, no public-browse tier: a **Builds** list (successfully-persisted
+builds only, with an Edit action per row), a **Build detail** view (name, `card_version`,
+description, the "Instructions" field — the `task` field relabeled, wire name unchanged — and the
+full raw CrewAI output), a **New Build** form (no `backstory` field, D-104), and an **Edit
+(revise) mode** on that same form that calls `POST /builds/{name}/revise` instead of `POST
+/builds`, pre-filling what's actually recoverable and saying plainly what isn't (role/goal).
 
 **Agent Runtime (`agent-runtime`, not a standing service — built once as a reusable image, no
 fixed port).** The actual "body" a deployed agent runs in. It's built into a container image
@@ -149,12 +183,14 @@ grading check on it passed.
 
 | File | What it does |
 |---|---|
-| `src/agent_builder_service/crew_layer.py` | Runs the actual CrewAI agent, including a tool call through Agent Gateway |
-| `src/agent_builder_service/agent_gateway_tool.py` | A small adapter letting a CrewAI agent call a tool through Agent Gateway specifically, rather than a generic bypass |
+| `src/agent_builder_service/crew_layer.py` | Runs the actual CrewAI agent, including a tool call through MCP Gateway Registry |
+| `src/agent_builder_service/mcp_gateway_registry_tool.py` | A small adapter letting a CrewAI agent call a tool through MCP Gateway Registry specifically, rather than a generic bypass (renamed from `agent_gateway_tool.py` / `AgentGatewayTool`, D-105) |
 | `src/agent_builder_service/sync_token.py` | A version of the platform's badge-fetching logic built for CrewAI's own non-standard execution style |
 | `src/agent_builder_service/models.py` | The database table recording every build attempt |
-| `src/agent_builder_service/main.py` | The `/builds` endpoint: kick off a build, sign and publish the resulting card, look up relevant eval suites |
+| `src/agent_builder_service/main.py` | The `/builds` (+ `/builds/{name}/revise`) endpoints: kick off a build, sign and publish the resulting card, look up relevant eval suites |
+| `static/index.html` | The Builds / New Build / Edit (revise) page at `/ui` |
 | `migrations/versions/0001_builds.py` | Creates the one table this service needs |
+| `migrations/versions/0002_card_version.py` | Adds the `card_version` column (D-103) |
 
 ### `services/agent-runtime/`
 
